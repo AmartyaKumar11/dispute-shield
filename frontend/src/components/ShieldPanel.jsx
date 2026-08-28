@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Mail } from 'lucide-react'
 import { getRiskSummary, getRisks } from '../lib/api'
-import { formatRupees, truncateId } from '../lib/format'
+import { formatDate, formatRupees, truncateId } from '../lib/format'
 
 function scoreColor(score) {
   if (score > 50) return 'text-[#F87171]'
@@ -100,6 +101,24 @@ export default function ShieldPanel({ refreshKey, onOpenDispute }) {
                         <span className={`rounded-pill border px-2 py-0.5 text-[11px] ${statusClass}`}>
                           {statusLabel}
                         </span>
+                        {r.intervention_email_status === 'sent' ? (
+                          <span
+                            title={`Email sent to ${r.customer_email || 'customer'} at ${formatDate(r.intervention_sent_at)}`}
+                            className="inline-flex items-center gap-1 rounded-pill border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent"
+                          >
+                            <Mail size={11} /> Email sent ✓
+                          </span>
+                        ) : null}
+                        {r.intervention_email_status === 'failed' ? (
+                          <span className="rounded-pill border border-warn/40 bg-warn/10 px-2 py-0.5 text-[11px] text-[#FBBF24]">
+                            Email failed ⚠
+                          </span>
+                        ) : null}
+                        {r.intervention_email_status === 'dry_run' ? (
+                          <span className="rounded-pill border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-muted">
+                            Email dry-run
+                          </span>
+                        ) : null}
                       </div>
                       <div className="mt-2 flex items-center gap-3">
                         <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/[0.08]">

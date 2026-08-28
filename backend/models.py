@@ -42,6 +42,11 @@ class Dispute(Base):
     documents_uploaded: Mapped[str | None] = mapped_column(Text, nullable=True)
     contest_response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    resolution_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolution_offer_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolution_offer_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    resolution_offer_email: Mapped[str | None] = mapped_column(String, nullable=True)
+
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     processing_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -92,6 +97,10 @@ class Dispute(Base):
             processing_time_seconds=processing_time,
             error_message=self.error_message,
             created_at=self.created_at,
+            resolution_offer_status=self.resolution_offer_status,
+            resolution_offer_sent_at=self.resolution_offer_sent_at,
+            resolution_offer_email=self.resolution_offer_email,
+            resolution_message=self.resolution_message,
         )
 
 
@@ -112,6 +121,10 @@ class TransactionRisk(Base):
     vault_fields_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     vault_timeline_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     payment_data_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    intervention_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intervention_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    intervention_email_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     def to_response(self, dispute_id: str | None = None) -> RiskResponse:
@@ -153,6 +166,10 @@ class TransactionRisk(Base):
             vault_field_total=5,
             dispute_id=dispute_id,
             created_at=self.created_at,
+            customer_email=self.customer_email,
+            intervention_message=self.intervention_message,
+            intervention_sent_at=self.intervention_sent_at,
+            intervention_email_status=self.intervention_email_status,
         )
 
 
@@ -176,6 +193,10 @@ class DisputeResponse(BaseModel):
     processing_time_seconds: float | None
     error_message: str | None
     created_at: datetime
+    resolution_offer_status: str | None = None
+    resolution_offer_sent_at: datetime | None = None
+    resolution_offer_email: str | None = None
+    resolution_message: str | None = None
 
 
 class DisputeListResponse(BaseModel):
@@ -201,6 +222,43 @@ class RiskResponse(BaseModel):
     vault_field_total: int = 5
     dispute_id: str | None = None
     created_at: datetime
+    customer_email: str | None = None
+    intervention_message: str | None = None
+    intervention_sent_at: datetime | None = None
+    intervention_email_status: str | None = None
+
+
+class EscalationEvent(Base):
+    __tablename__ = "escalation_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    order_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    processed: Mapped[bool] = mapped_column(Integer, default=0)
+
+
+class EscalationAlert(Base):
+    __tablename__ = "escalation_alerts"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    rule_id: Mapped[str] = mapped_column(String, nullable=False)
+    event_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    order_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    payment_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    customer_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    transaction_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    product_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    severity: Mapped[str] = mapped_column(String, default="high")
+    signal_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intervention_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    intervention_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    intervention_email_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    state: Mapped[str] = mapped_column(String, default="OPEN")
+    state_history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
 class RiskListResponse(BaseModel):

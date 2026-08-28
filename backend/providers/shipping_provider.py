@@ -3,7 +3,12 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timedelta, timezone
 
+import structlog
+
+from backend.config import settings
 from backend.providers.base import ShippingInfo, ShippingProvider
+
+log = structlog.get_logger(__name__)
 
 _CARRIERS = ("Delhivery", "BlueDart", "DTDC", "Ecom Express", "Shadowfax")
 _ADDRESSES = (
@@ -81,3 +86,24 @@ class MockShippingProvider(ShippingProvider):
             signed_by=signed_by,
             proof_of_delivery_url=pod,
         )
+
+
+_mock_shipping = MockShippingProvider()
+
+
+async def get_shipping_info(order_id: str) -> ShippingInfo:
+    """Try Shiprocket first when enabled; fall back to mock for demo orders."""
+    if (
+        settings.shiprocket_enabled
+        and settings.shiprocket_email
+        and settings.shiprocket_password
+    ):
+        try:
+            from backend.providers.shiprocket_provider import shiprocket
+
+            result = await shiprocket.get_delivery_status(order_id)
+            if result is not None:
+                return result
+        except Exception:
+            log.exception("shipping.shiprocket_fallback", order_id=order_id)
+    return await _mock_shipping.get_delivery_status(order_id)

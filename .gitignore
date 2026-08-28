@@ -41,3 +41,6 @@ disputeshield/
 # ML raw datasets (too large for git)
 backend/ml/data/
 
+# Shiprocket auth token cache (contains secret)
+backend/ml/models/shiprocket_token.json
+

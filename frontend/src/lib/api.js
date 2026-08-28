@@ -78,4 +78,21 @@ export async function getModelsInfo() {
   return data
 }
 
+export async function sendTestEmail(payload) {
+  const { data } = await api.post('/api/test/send-email', payload)
+  return data
+}
+
+export async function createShiprocketOrder(payload) {
+  const { data } = await api.post('/api/test/create-shiprocket-order', payload)
+  return data
+}
+
+export async function sendResolutionOffer(disputeId, message) {
+  const { data } = await api.post(`/api/disputes/${disputeId}/send-resolution-offer`, {
+    message: message || undefined,
+  })
+  return data
+}
+
 export default api

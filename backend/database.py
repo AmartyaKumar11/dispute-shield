@@ -34,12 +34,20 @@ def _sqlite_add_missing_columns(sync_conn) -> None:
             "win_probability_reasoning": "TEXT",
             "triage_action": "VARCHAR",
             "review_reason": "TEXT",
+            "resolution_message": "TEXT",
+            "resolution_offer_status": "VARCHAR",
+            "resolution_offer_sent_at": "DATETIME",
+            "resolution_offer_email": "VARCHAR",
         },
         "transaction_risks": {
             "payment_method": "VARCHAR",
             "vault_fields_json": "TEXT",
             "vault_timeline_json": "TEXT",
             "payment_data_json": "TEXT",
+            "customer_email": "VARCHAR",
+            "intervention_message": "TEXT",
+            "intervention_sent_at": "DATETIME",
+            "intervention_email_status": "VARCHAR",
         },
     }
     for table, cols in defs.items():

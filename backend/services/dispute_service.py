@@ -12,8 +12,9 @@ from backend.models import Dispute, TransactionRisk
 from backend.providers.comms_provider import MockCommunicationProvider
 from backend.providers.llm_provider import KimiLLMProvider
 from backend.providers.razorpay_provider import RazorpayProvider
-from backend.providers.shipping_provider import MockShippingProvider
+from backend.providers.shipping_provider import get_shipping_info
 from backend.services import document_builder
+from backend.services.escalation_engine import send_resolution_offer
 from backend.services.evidence_analyzer import (
     analyze_evidence_strength,
     predict_win_probability,
@@ -31,7 +32,6 @@ log = structlog.get_logger(__name__)
 
 _pipeline_lock = asyncio.Lock()
 _razorpay = RazorpayProvider()
-_shipping = MockShippingProvider()
 _comms = MockCommunicationProvider()
 _llm = KimiLLMProvider()
 
@@ -87,7 +87,7 @@ async def _run(dispute_id: str) -> None:
             gaps: list[str] = []
             try:
                 if dispute.order_id:
-                    shipping_record = await _shipping.get_delivery_status(dispute.order_id)
+                    shipping_record = await get_shipping_info(dispute.order_id)
             except Exception:
                 log.exception("pipeline.shipping_failed", order_id=dispute.order_id)
             if shipping_is_gap(shipping_record):
@@ -204,6 +204,18 @@ async def _run(dispute_id: str) -> None:
                         "triage_action": "accept",
                     }
                 )
+                product = ""
+                if isinstance(payment, dict):
+                    product = str((payment.get("notes") or {}).get("product") or "")
+                resolution_msg = (
+                    f"We're sorry about the trouble with your order "
+                    f"{dispute.order_id or dispute.id}"
+                    + (f" ({product})" if product else "")
+                    + f". Based on our review, we'd like to offer a full refund of "
+                    f"₹{paise_to_rupees(dispute.amount_paise):,.2f}. "
+                    f"Reply YES to accept, or tell us how else we can help."
+                )
+                await send_resolution_offer(dispute, resolution_msg, session)
                 dispute.processing_completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
                 await session.commit()
                 log.info("pipeline.accepted", dispute_id=dispute_id, win=win_score)

@@ -9,9 +9,12 @@ from fastapi import BackgroundTasks
 from sqlalchemy import select
 
 from backend.database import AsyncSessionLocal
+from backend.config import settings
 from backend.models import Dispute, TransactionRisk
-from backend.providers.shipping_provider import MockShippingProvider
+from backend.providers.shipping_provider import MockShippingProvider, get_shipping_info
+from backend.providers.shiprocket_provider import shiprocket
 from backend.services.dispute_service import process_dispute
+from backend.services.escalation_engine import create_seed_intervention
 from backend.services.risk_scorer import score_transaction_risk
 from backend.utils.helpers import unix_to_naive
 
@@ -19,6 +22,9 @@ log = structlog.get_logger(__name__)
 
 _VPAS = ("customer@okicici", "buyer@ybl", "user@paytm", "shopper@oksbi", "payee@ibl")
 _SIGNED = ("Ramesh Kumar", "Sita Devi", "Mohammed Ali", "Lakshmi Nair", "Deepak Rao")
+
+# Simulated disputes always use mock shipping — they won't exist in Shiprocket
+_mock_shipping = MockShippingProvider()
 
 # 12 card/mixed disputes — index 10 is FN (low score forced later)
 CARD_DISPUTES: list[dict] = [
@@ -101,11 +107,15 @@ _ADDRESSES = {
     3: "88, Civil Lines, Nagpur, Maharashtra 440001",
 }
 
-_shipping = MockShippingProvider()
-
 # Back-compat aliases used by older imports/tests
 TEST_SCENARIOS = CARD_DISPUTES + UPI_DISPUTES
 HEALTHY_TXNS = CLEAN_TXNS
+
+_INTERVENTION_TEMPLATES = [
+    "Your package with {carrier} is delayed past the promised window. We're escalating with the courier and can arrange a replacement if it doesn't arrive in 48 hours.",
+    "We saw an RTO risk signal on order {order_id}. Reply if the delivery address needs an update — we can reattempt shipment today.",
+    "Tracking shows your high-value order may need proof-of-delivery confirmation. Share a preferred delivery slot and we'll coordinate with the courier.",
+]
 
 
 def _upi_fields(index: int, scenario: dict) -> dict:
@@ -284,20 +294,29 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
     created = 0
     skipped = 0
     risks_created = 0
+    emails_sent = 0
+    shiprocket_orders: list[dict] = []
     errors: list[str] = []
     to_process: list[str] = []
     known_emails: set[str] = set()
 
     dispute_scenarios = CARD_DISPUTES + UPI_DISPUTES
+    demo_inbox = settings.smtp_user if settings.send_real_emails and settings.smtp_user else None
+
+    def _maybe_override_email(payment: dict) -> dict:
+        if demo_inbox:
+            payment = {**payment, "email": demo_inbox}
+        return payment
 
     # Clean first so known_emails reflects established customers for some scores
     for i, scenario in enumerate(CLEAN_TXNS):
         idx = len(dispute_scenarios) + i
         order_id = f"order_simulated_{idx + 1}"
         cust = CLEAN_CUSTOMERS[i % len(CLEAN_CUSTOMERS)]
-        payment = _payment_entity(idx, order_id, created_at, scenario, cust)
+        payment = _maybe_override_email(_payment_entity(idx, order_id, created_at, scenario, cust))
         try:
-            shipping = await _shipping.get_delivery_status(order_id)
+            # Simulated orders: always mock (not in Shiprocket)
+            shipping = await _mock_shipping.get_delivery_status(order_id)
             made = await _save_risk(
                 payment,
                 shipping,
@@ -309,6 +328,28 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
             )
             if made:
                 risks_created += 1
+                # Intervene on high-risk clean (FP demo) rows
+                if float(scenario.get("force_risk") or 0) >= 50 or scenario.get("metric_role") == "fp":
+                    async with AsyncSessionLocal() as session:
+                        risk = (
+                            await session.execute(
+                                select(TransactionRisk).where(
+                                    TransactionRisk.payment_id == payment["id"]
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if risk is not None:
+                            tmpl = _INTERVENTION_TEMPLATES[i % len(_INTERVENTION_TEMPLATES)]
+                            msg = tmpl.format(
+                                carrier=shipping.carrier,
+                                order_id=order_id,
+                            )
+                            alert = await create_seed_intervention(session, risk=risk, message=msg)
+                            await session.commit()
+                            if alert.intervention_email_status == "sent":
+                                emails_sent += 1
+                            if settings.send_real_emails:
+                                await asyncio.sleep(1.5)
             known_emails.add(payment["email"].lower())
         except Exception as exc:
             errors.append(f"clean_{idx + 1}: {exc}")
@@ -318,13 +359,13 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
         dispute_id = f"disp_simulated_{index + 1}"
         order_id = f"order_simulated_{index + 1}"
         cust = CUSTOMERS[index % len(CUSTOMERS)]
-        payment = _payment_entity(index, order_id, created_at, scenario, cust)
+        payment = _maybe_override_email(_payment_entity(index, order_id, created_at, scenario, cust))
         email_l = payment["email"].lower()
         known_for = set(known_emails)
         known_emails.add(email_l)
         respond_by = unix_to_naive(int((now + timedelta(days=7 + (index % 8))).timestamp()))
         try:
-            shipping = await _shipping.get_delivery_status(order_id)
+            shipping = await _mock_shipping.get_delivery_status(order_id)
             made = await _save_risk(
                 payment,
                 shipping,
@@ -363,13 +404,70 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
                 ).scalar_one_or_none()
                 if risk is not None:
                     risk.alert_status = "dispute_filed"
+                    # One intervention email for delayed-delivery style disputes
+                    if index < 3:
+                        tmpl = _INTERVENTION_TEMPLATES[index % len(_INTERVENTION_TEMPLATES)]
+                        msg = tmpl.format(carrier=shipping.carrier, order_id=order_id)
+                        alert = await create_seed_intervention(session, risk=risk, message=msg)
+                        if alert.intervention_email_status == "sent":
+                            emails_sent += 1
                 await session.commit()
+            if settings.send_real_emails and index < 3:
+                await asyncio.sleep(1.5)
             created += 1
             to_process.append(dispute_id)
             log.info("seed.dispute_created", dispute_id=dispute_id, reason=scenario["reason"])
         except Exception as exc:
             errors.append(f"{dispute_id}: {exc}")
             log.exception("seed.dispute_failed", index=index)
+
+    if (
+        settings.create_real_shiprocket_orders
+        and settings.shiprocket_enabled
+        and settings.shiprocket_email
+    ):
+        for i in range(2):
+            try:
+                oid = f"DS-SEED-{int(now.timestamp())}-{i + 1}"
+                cust = CUSTOMERS[i]
+                email = demo_inbox or cust[1]
+                result = await shiprocket.create_order(
+                    {
+                        "order_id": oid,
+                        "order_date": now.strftime("%Y-%m-%d %H:%M"),
+                        "pickup_location": "Primary",
+                        "billing_customer_name": cust[0].split()[0],
+                        "billing_last_name": cust[0].split()[-1],
+                        "billing_address": "Demo Street 1",
+                        "billing_city": "Gurugram",
+                        "billing_pincode": "122413",
+                        "billing_state": "Haryana",
+                        "billing_country": "India",
+                        "billing_email": email,
+                        "billing_phone": cust[2].lstrip("+91")[-10:],
+                        "shipping_is_billing": True,
+                        "order_items": [
+                            {
+                                "name": CARD_DISPUTES[i]["product"],
+                                "sku": f"SEED-{i + 1}",
+                                "units": 1,
+                                "selling_price": CARD_DISPUTES[i]["amount"] / 100,
+                            }
+                        ],
+                        "payment_method": "Prepaid",
+                        "sub_total": CARD_DISPUTES[i]["amount"] / 100,
+                        "length": 15,
+                        "breadth": 15,
+                        "height": 15,
+                        "weight": 0.5,
+                    }
+                )
+                shiprocket_orders.append({"order_id": oid, "response": result})
+                # Also pull shipping via unified helper (may still be pending)
+                _ = await get_shipping_info(oid)
+            except Exception as exc:
+                errors.append(f"shiprocket_{i}: {exc}")
+                log.exception("seed.shiprocket_failed", index=i)
 
     for dispute_id in to_process:
         if background_tasks is not None:
@@ -381,6 +479,8 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
         "created": created,
         "skipped": skipped,
         "risks_created": risks_created,
+        "emails_sent": emails_sent,
+        "shiprocket_orders": shiprocket_orders,
         "total_disputes": len(dispute_scenarios),
         "total_transactions": len(dispute_scenarios) + len(CLEAN_TXNS),
         "errors": errors,

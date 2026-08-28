@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, Loader2, Minus, RefreshCw } from 'lucide-react'
-import { getDispute, retryDispute, forceSubmitDispute, acceptDispute } from '../lib/api'
+import { AlertTriangle, Check, Loader2, Mail, Minus, RefreshCw } from 'lucide-react'
+import { getDispute, retryDispute, forceSubmitDispute, acceptDispute, sendResolutionOffer } from '../lib/api'
 import { evidenceChecklist, formatDate, formatRupees, TERMINAL } from '../lib/format'
 import EvidenceTimeline from './EvidenceTimeline'
 import AIReasoning from './AIReasoning'
@@ -136,6 +136,17 @@ export default function DisputeDetail({ disputeId, onRetried }) {
           {dispute.review_reason ? (
             <p className="text-[13px] text-muted">{dispute.review_reason}</p>
           ) : null}
+          {dispute.resolution_offer_status === 'sent' ? (
+            <p
+              title={`Email sent to ${dispute.resolution_offer_email || 'customer'} at ${formatDate(dispute.resolution_offer_sent_at)}`}
+              className="inline-flex items-center gap-1.5 text-[13px] text-accent"
+            >
+              <Mail size={14} /> Resolution offer sent ✓ · {formatDate(dispute.resolution_offer_sent_at)}
+            </p>
+          ) : null}
+          {dispute.resolution_offer_status === 'failed' ? (
+            <p className="text-[13px] text-[#FBBF24]">Resolution offer email failed ⚠</p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -173,6 +184,24 @@ export default function DisputeDetail({ disputeId, onRetried }) {
             >
               Accept Dispute
             </button>
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                try {
+                  setActing(true)
+                  await sendResolutionOffer(dispute.id)
+                  onRetried?.(dispute.id)
+                } catch (err) {
+                  setError(err.message || 'Resolution email failed')
+                } finally {
+                  setActing(false)
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-pill border border-info/40 bg-info/10 px-4 py-2 text-[13px] text-[#60A5FA] hover:bg-info/20 disabled:opacity-60"
+            >
+              <Mail size={14} /> Send resolution offer
+            </button>
           </div>
         </section>
       ) : null}
@@ -182,6 +211,14 @@ export default function DisputeDetail({ disputeId, onRetried }) {
           <p className="text-sm text-muted">Dispute accepted — contest skipped.</p>
           {dispute.review_reason ? (
             <p className="text-[13px] text-muted">{dispute.review_reason}</p>
+          ) : null}
+          {dispute.resolution_offer_status === 'sent' ? (
+            <p
+              title={`Email sent to ${dispute.resolution_offer_email || 'customer'} at ${formatDate(dispute.resolution_offer_sent_at)}`}
+              className="inline-flex items-center gap-1.5 text-[13px] text-accent"
+            >
+              <Mail size={14} /> Resolution offer sent ✓ · {formatDate(dispute.resolution_offer_sent_at)}
+            </p>
           ) : null}
           <button
             type="button"
