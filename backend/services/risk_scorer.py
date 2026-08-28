@@ -58,6 +58,8 @@ class RiskAssessment:
     recommended_actions: list[str] = field(default_factory=list)
     predicted_dispute_type: str | None = None
     used_fallback: bool = False
+    ml_model_used: str | None = None
+    ml_probability: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -67,6 +69,8 @@ class RiskAssessment:
             "recommended_actions": self.recommended_actions,
             "predicted_dispute_type": self.predicted_dispute_type,
             "used_fallback": self.used_fallback,
+            "ml_model_used": self.ml_model_used,
+            "ml_probability": self.ml_probability,
         }
 
 
@@ -182,38 +186,71 @@ async def score_transaction_risk(
     known_emails: set[str] | None = None,
     use_llm: bool = True,
 ) -> RiskAssessment:
-    rule, factors, predicted = _rule_score(payment_data, order_data, shipping_info, known_emails)
-    llm_score: float | None = None
-    llm_actions: list[str] = []
-    llm_predicted: str | None = None
-    used_fallback = True
+    from backend.ml.predictor import predictor
 
+    method = (payment_data.get("method") or "card").lower()
+    if method == "upi":
+        ml_result = predictor.predict_upi_risk(payment_data)
+    else:
+        ml_result = predictor.predict_card_risk(payment_data)
+    ml_score = float(ml_result.get("risk_score") or 50)
+
+    rule_score, factors, predicted = _rule_score(
+        payment_data, order_data, shipping_info, known_emails
+    )
+
+    # Blend: 60% trained ML + 40% India-specific rules
+    final = int(round(ml_score * 0.6 + min(rule_score, 100.0) * 0.4))
+    final = max(0, min(100, final))
+    level = _level(float(final))
+
+    prec = ml_result.get("model_precision")
+    rec = ml_result.get("model_recall")
+    prec_s = f"{float(prec):.3f}" if isinstance(prec, (int, float)) else "N/A"
+    rec_s = f"{float(rec):.3f}" if isinstance(rec, (int, float)) else "N/A"
+    factors.insert(
+        0,
+        RiskFactor(
+            factor="ml_model_prediction",
+            signal=(
+                f"{ml_result.get('model')} predicted {float(ml_result.get('probability') or 0):.1%} "
+                f"dispute probability (P={prec_s}, R={rec_s})"
+            ),
+            weight=round(ml_score * 0.6, 1),
+        ),
+    )
+
+    actions = _actions_for_level(level)
+    used_fallback = ml_result.get("model") == "fallback"
+
+    # Optional LLM polish for actions / predicted type (never blocks scoring)
     if use_llm:
         try:
-            llm_score, llm_factors, llm_actions, llm_predicted = await _llm_risk(
-                payment_data, order_data, shipping_info, rule
+            _, llm_factors, llm_actions, llm_predicted = await _llm_risk(
+                payment_data, order_data, shipping_info, float(final)
             )
             for f in llm_factors:
                 if f.factor not in {x.factor for x in factors}:
                     factors.append(f)
-            used_fallback = False
+            if llm_actions:
+                actions = llm_actions
+            if llm_predicted:
+                predicted = llm_predicted
         except Exception:
             log.exception("risk_scorer.llm_failed")
 
-    if llm_score is None:
-        final = rule
-    else:
-        final = round(rule * 0.6 + float(llm_score) * 0.4, 1)
-    final = max(0.0, min(100.0, final))
-    level = _level(final)
-    actions = llm_actions or _actions_for_level(level)
+    if method == "upi" and predicted in {None, "chargeback", "fraud"}:
+        predicted = "upi_unauthorized" if final >= 60 else "upi_goods_not_provided"
+
     return RiskAssessment(
-        risk_score=final,
+        risk_score=float(final),
         risk_level=level,
         risk_factors=factors,
         recommended_actions=actions,
-        predicted_dispute_type=llm_predicted or predicted,
+        predicted_dispute_type=predicted,
         used_fallback=used_fallback,
+        ml_model_used=str(ml_result.get("model") or "fallback"),
+        ml_probability=float(ml_result.get("probability") or 0.5),
     )
 
 

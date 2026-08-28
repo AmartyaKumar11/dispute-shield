@@ -1,0 +1,36 @@
+{
+  "precision": 0.9995294117647059,
+  "recall": 0.9995294117647059,
+  "f1": 0.9995294117647059,
+  "confusion_matrix": [
+    [
+      1244484,
+      2
+    ],
+    [
+      2,
+      4248
+    ]
+  ],
+  "test_size": 1248736,
+  "train_size": 1000000,
+  "fraud_rate_train": 0.003963,
+  "fraud_rate_test": 0.0034034415601055788,
+  "dataset": "PaySim Synthetic Mobile Money",
+  "dataset_size": 6362620,
+  "features": [
+    "step",
+    "type_encoded",
+    "amount",
+    "oldbalanceOrg",
+    "newbalanceOrig",
+    "oldbalanceDest",
+    "newbalanceDest",
+    "amount_ratio_orig",
+    "balance_change_orig",
+    "balance_change_dest",
+    "is_dest_merchant",
+    "balance_error_orig",
+    "balance_error_dest"
+  ]
+}

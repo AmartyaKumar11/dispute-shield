@@ -38,3 +38,6 @@ tmp/
 disputeshield/
 *.log
 
+# ML raw datasets (too large for git)
+backend/ml/data/
+

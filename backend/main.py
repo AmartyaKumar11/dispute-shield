@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import disputes, evaluation, intelligence, metrics, risks, webhooks
+from backend.routers import disputes, evaluation, intelligence, metrics, models, risks, webhooks
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.include_router(metrics.router)
 app.include_router(risks.router)
 app.include_router(intelligence.router)
 app.include_router(evaluation.router)
+app.include_router(models.router)
 
 
 @app.get("/health")

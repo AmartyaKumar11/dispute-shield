@@ -1,0 +1,42 @@
+{
+  "precision": 0.19526013957023422,
+  "recall": 0.6953740157480315,
+  "f1": 0.3049037061013109,
+  "confusion_matrix": [
+    [
+      102397,
+      11647
+    ],
+    [
+      1238,
+      2826
+    ]
+  ],
+  "test_size": 118108,
+  "train_size": 472432,
+  "fraud_rate_train": 0.03513521522674162,
+  "fraud_rate_test": 0.034409184813899145,
+  "dataset": "IEEE-CIS Fraud Detection",
+  "dataset_size": 590540,
+  "features": [
+    "TransactionAmt",
+    "ProductCD",
+    "card4",
+    "card6",
+    "P_emaildomain",
+    "R_emaildomain",
+    "addr1",
+    "addr2",
+    "dist1",
+    "C1",
+    "C2",
+    "C5",
+    "C6",
+    "C13",
+    "C14",
+    "D1",
+    "D4",
+    "D10",
+    "D15"
+  ]
+}

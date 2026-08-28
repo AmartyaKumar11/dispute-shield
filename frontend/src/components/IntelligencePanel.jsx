@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getEvaluation, getIntelligence } from '../lib/api'
+import { getEvaluation, getIntelligence, getModelsInfo } from '../lib/api'
 import { formatRupees } from '../lib/format'
 
 const PRIORITY = {
@@ -17,6 +17,7 @@ function metricTone(v) {
 export default function IntelligencePanel({ refreshKey }) {
   const [data, setData] = useState(null)
   const [evalReport, setEvalReport] = useState(null)
+  const [modelsInfo, setModelsInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -25,10 +26,15 @@ export default function IntelligencePanel({ refreshKey }) {
     ;(async () => {
       try {
         setLoading(true)
-        const [insights, evaluation] = await Promise.all([getIntelligence(), getEvaluation()])
+        const [insights, evaluation, models] = await Promise.all([
+          getIntelligence(),
+          getEvaluation(),
+          getModelsInfo(),
+        ])
         if (!alive) return
         setData(insights)
         setEvalReport(evaluation)
+        setModelsInfo(models)
         setError(null)
       } catch (err) {
         if (alive) setError(err.message || 'Failed to load insights')
@@ -82,6 +88,27 @@ export default function IntelligencePanel({ refreshKey }) {
             <MetricCard label="Recall" value={rs.recall} />
             <MetricCard label="F1 Score" value={rs.f1_score} />
           </div>
+          <p className="text-[12px] text-muted">Production metrics (on live / seeded transactions)</p>
+
+          {modelsInfo ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <TrainingCard
+                title="Card model"
+                status={modelsInfo.card_model?.status}
+                dataset="Trained on IEEE-CIS: 590,540 real e-commerce transactions"
+                metrics={modelsInfo.card_model?.metrics}
+                rateNote="3.5% chargeback rate"
+              />
+              <TrainingCard
+                title="UPI model"
+                status={modelsInfo.upi_model?.status}
+                dataset="Trained on PaySim: 6.3M synthetic mobile money transactions"
+                metrics={modelsInfo.upi_model?.metrics}
+                rateNote="0.13% fraud rate"
+              />
+            </div>
+          ) : null}
+          <p className="text-[12px] text-muted">Training metrics (on held-out test set)</p>
 
           {vault ? (
             <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-center">
@@ -272,6 +299,36 @@ function MatrixCell({ tone, label, value }) {
     <div className={`rounded-card border px-4 py-4 ${bg}`}>
       <p className="font-mono text-[24px] font-bold text-ink">{value}</p>
       <p className="mt-1 text-[12px] text-muted">{label}</p>
+    </div>
+  )
+}
+
+function TrainingCard({ title, status, dataset, metrics, rateNote }) {
+  const m = metrics || {}
+  return (
+    <div className="elevated-card px-5 py-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-medium text-ink">{title}</p>
+        <span
+          className={`rounded-pill border px-2 py-0.5 text-[10px] uppercase ${
+            status === 'loaded'
+              ? 'border-accent/30 bg-accent/10 text-accent'
+              : 'border-warn/40 bg-warn/10 text-[#FBBF24]'
+          }`}
+        >
+          {status || 'unknown'}
+        </span>
+      </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-muted">{dataset}</p>
+      {status === 'loaded' ? (
+        <p className="mt-2 font-mono text-[12px] text-ink">
+          Precision: {Number(m.precision || 0).toFixed(3)} | Recall:{' '}
+          {Number(m.recall || 0).toFixed(3)} | F1: {Number(m.f1 || 0).toFixed(3)}
+        </p>
+      ) : (
+        <p className="mt-2 text-[12px] text-[#FBBF24]">Model file not loaded — run train scripts.</p>
+      )}
+      <p className="mt-1 text-[11px] text-label">{rateNote}</p>
     </div>
   )
 }

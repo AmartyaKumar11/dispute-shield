@@ -73,4 +73,9 @@ export async function getEvaluation() {
   return data
 }
 
+export async function getModelsInfo() {
+  const { data } = await api.get('/api/models/info')
+  return data
+}
+
 export default api
