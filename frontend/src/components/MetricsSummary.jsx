@@ -57,7 +57,9 @@ export default function MetricsSummary({ refreshKey = 0 }) {
     <section className="surface-card overflow-hidden">
       <div className="border-b border-white/[0.06] px-6 py-4">
         <p className="eyebrow">Batch overview</p>
-        <h2 className="mt-1 text-[20px] font-semibold tracking-[-0.02em]">Metrics summary</h2>
+        <h2 className="display-title mt-1 text-[22px] tracking-[-0.02em]">
+          Metrics summary
+        </h2>
       </div>
       {error ? (
         <p className="px-6 py-4 text-sm text-[#F87171]">{error}</p>

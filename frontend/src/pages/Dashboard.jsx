@@ -33,7 +33,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-page text-ink">
       <header className="sticky top-0 z-20 h-14 border-b border-white/[0.06] bg-page">
         <div className="mx-auto flex h-full max-w-shell items-center justify-between px-6">
-          <div className="text-[18px] font-semibold tracking-[-0.02em]">DisputeShield</div>
+          <div className="display-title text-[28px] leading-none">DisputeShield</div>
           <button
             type="button"
             onClick={onSeed}
@@ -55,10 +55,10 @@ export default function Dashboard() {
       <main className="mx-auto max-w-shell space-y-8 px-6 py-8">
         <div>
           <p className="eyebrow">AI risk manager</p>
-          <h1 className="mt-2 text-[28px] font-semibold tracking-[-0.02em]">
+          <h1 className="display-title mt-2 text-[28px] tracking-[-0.02em]">
             Chargeback evidence auto-assembler
           </h1>
-          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-muted">
+          <p className="mt-2 max-w-2xl text-[14px] font-normal leading-[1.6] text-muted">
             Watch disputes move from webhook to contested evidence package — strategy, shipping
             mocks, LLM letter, and submission status in one view.
           </p>
