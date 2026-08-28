@@ -33,6 +33,22 @@ _GAP_FOCUS = (
     "Note: shipping proof is not available. Focus the explanation on other "
     "evidence such as billing proof and transaction legitimacy."
 )
+_AUTH_MSG = "Authentication failed — check API keys"
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(
+        token in text
+        for token in (
+            "401",
+            "authentication failed",
+            "unauthorized",
+            "invalid api key",
+            "invalid key_id",
+            "bad_request_error\",\"description\":\"authentication",
+        )
+    )
 
 
 async def process_dispute(dispute_id: str) -> None:
@@ -49,7 +65,8 @@ async def _run(dispute_id: str) -> None:
 
         started = datetime.now(timezone.utc).replace(tzinfo=None)
         dispute.status = "gathering"
-        dispute.processing_started_at = started
+        # Wall-clock from received → submitted uses created_at as start.
+        dispute.processing_started_at = dispute.created_at or started
         dispute.error_message = None
         await session.commit()
 
@@ -108,7 +125,7 @@ async def _run(dispute_id: str) -> None:
             letter_focus = strategy.letter_focus
             if "shipping_proof" in gaps:
                 letter_focus = f"{letter_focus} {_GAP_FOCUS}"
-            letter = await _llm.generate_explanation_letter(
+            letter, used_fallback = await _llm.generate_explanation_letter(
                 dispute.reason_code,
                 letter_focus,
                 payment,
@@ -129,6 +146,9 @@ async def _run(dispute_id: str) -> None:
             docs["billing_proof"] = await _upload(pdf_billing, "billing_proof", simulate)
             evidence_fields["billing_proof"] = [docs["billing_proof"]]
             evidence_fields["proof_of_service"] = [docs["billing_proof"]]
+            evidence_fields["term_and_conditions"] = [docs["billing_proof"]]
+            evidence_fields["refund_confirmation"] = [docs["billing_proof"]]
+            evidence_fields["refund_cancellation_policy"] = [docs["billing_proof"]]
 
             pdf_ship = document_builder.build_shipping_proof(dispute.id, shipping)
             if pdf_ship:
@@ -146,7 +166,10 @@ async def _run(dispute_id: str) -> None:
                 )
                 evidence_fields["customer_communication"] = [docs["customer_communication"]]
 
-            if "access_activity_log" in strategy.required_evidence or "access_activity_log" in strategy.recommended_evidence:
+            if (
+                "access_activity_log" in strategy.required_evidence
+                or "access_activity_log" in strategy.recommended_evidence
+            ):
                 pdf_log = document_builder.build_access_activity_log(dispute.id, payment)
                 docs["access_activity_log"] = await _upload(pdf_log, "access_activity_log", simulate)
                 evidence_fields["access_activity_log"] = [docs["access_activity_log"]]
@@ -163,6 +186,7 @@ async def _run(dispute_id: str) -> None:
                     "letter_focus": strategy.letter_focus,
                     "evidence_gaps": gaps,
                     "coverage": coverage,
+                    "letter_fallback": used_fallback,
                 }
             )
             dispute.documents_uploaded = json.dumps(docs)
@@ -191,11 +215,15 @@ async def _run(dispute_id: str) -> None:
                 dispute_id=dispute_id,
                 gaps=gaps,
                 docs=list(docs),
+                letter_fallback=used_fallback,
             )
         except Exception as exc:
             log.exception("pipeline.failed", dispute_id=dispute_id)
             dispute.status = "error"
-            dispute.error_message = str(exc)[:1000]
+            if _is_auth_error(exc):
+                dispute.error_message = _AUTH_MSG
+            else:
+                dispute.error_message = str(exc)[:1000]
             dispute.processing_completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             await session.commit()
 
@@ -207,7 +235,10 @@ async def _load_payment(dispute: Dispute) -> dict:
         return {"id": dispute.payment_id, "amount": dispute.amount_paise, "currency": dispute.currency}
     try:
         return await _razorpay.get_payment(dispute.payment_id)
-    except Exception:
+    except Exception as exc:
+        if _is_auth_error(exc):
+            log.error("pipeline.payment_auth_failed", payment_id=dispute.payment_id)
+            raise RuntimeError(_AUTH_MSG) from exc
         log.warning("pipeline.payment_fallback", payment_id=dispute.payment_id)
         return json.loads(dispute.payment_data_json or "{}") or {
             "id": dispute.payment_id,
@@ -222,7 +253,10 @@ async def _load_order(dispute: Dispute) -> dict:
         return {"id": dispute.order_id}
     try:
         return await _razorpay.get_order(dispute.order_id)
-    except Exception:
+    except Exception as exc:
+        if _is_auth_error(exc):
+            log.error("pipeline.order_auth_failed", order_id=dispute.order_id)
+            raise RuntimeError(_AUTH_MSG) from exc
         log.warning("pipeline.order_fallback", order_id=dispute.order_id)
         return {"id": dispute.order_id}
 
@@ -232,7 +266,10 @@ async def _load_refunds(dispute: Dispute) -> list[dict]:
         return []
     try:
         return await _razorpay.get_refunds(dispute.payment_id)
-    except Exception:
+    except Exception as exc:
+        if _is_auth_error(exc):
+            log.error("pipeline.refunds_auth_failed", payment_id=dispute.payment_id)
+            raise RuntimeError(_AUTH_MSG) from exc
         log.warning("pipeline.refunds_fallback", payment_id=dispute.payment_id)
         return []
 
@@ -244,7 +281,9 @@ async def _upload(file_path: str, purpose: str, simulate: bool) -> str:
         return doc_id
     try:
         return await _razorpay.upload_document(file_path, "dispute_evidence")
-    except Exception:
+    except Exception as exc:
+        if _is_auth_error(exc):
+            raise RuntimeError(_AUTH_MSG) from exc
         doc_id = f"doc_sim_{Path(file_path).stem}"
         log.warning("pipeline.upload_fallback", purpose=purpose, doc_id=doc_id)
         return doc_id
@@ -258,4 +297,6 @@ async def _contest(dispute_id: str, evidence: dict, simulate: bool) -> dict:
         return await _razorpay.contest_dispute(dispute_id, evidence)
     except Exception as exc:
         log.exception("pipeline.contest_failed", dispute_id=dispute_id)
+        if _is_auth_error(exc):
+            raise RuntimeError(_AUTH_MSG) from exc
         raise RuntimeError(f"Contest submission failed: {exc}") from exc

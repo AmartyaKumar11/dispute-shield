@@ -95,7 +95,7 @@ EVIDENCE_STRATEGIES: dict[str, EvidenceStrategy] = {
     ),
 }
 
-_REQ_WEIGHT = 2.0
+_REQ_WEIGHT = 1.0
 _REC_WEIGHT = 1.0
 
 
@@ -107,16 +107,15 @@ def evaluate_evidence_coverage(
     strategy: EvidenceStrategy,
     gathered_evidence: set[str] | dict | list[str],
 ) -> float:
+    """Flat coverage: gathered(required∪recommended) / |required∪recommended|."""
     if isinstance(gathered_evidence, dict):
         gathered = {k for k, v in gathered_evidence.items() if v}
     else:
         gathered = set(gathered_evidence)
-    total = len(strategy.required_evidence) * _REQ_WEIGHT + len(strategy.recommended_evidence) * _REC_WEIGHT
-    if total == 0:
+    fields = list(dict.fromkeys([*strategy.required_evidence, *strategy.recommended_evidence]))
+    if not fields:
         return 1.0
-    score = sum(_REQ_WEIGHT for item in strategy.required_evidence if item in gathered)
-    score += sum(_REC_WEIGHT for item in strategy.recommended_evidence if item in gathered)
-    return score / total
+    return sum(1 for item in fields if item in gathered) / len(fields)
 
 
 def shipping_is_gap(shipping_info: ShippingInfo | None) -> bool:

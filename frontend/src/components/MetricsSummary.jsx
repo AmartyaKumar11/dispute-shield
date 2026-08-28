@@ -4,8 +4,19 @@ import { getMetrics } from '../lib/api'
 const EMPTY = {
   total_disputes: 0,
   by_status: {},
+  by_reason_code: {},
   avg_processing_time_seconds: 0,
   evidence_coverage_rate: 0,
+}
+
+const REASON_LABELS = {
+  chargeback: 'Chargeback',
+  fraud: 'Fraud',
+  product_not_received: 'Not received',
+  product_not_as_described: 'Not as described',
+  credit_not_processed: 'Credit not processed',
+  subscription_canceled: 'Subscription',
+  general: 'General',
 }
 
 export default function MetricsSummary({ refreshKey = 0 }) {
@@ -40,6 +51,7 @@ export default function MetricsSummary({ refreshKey = 0 }) {
   const errors = metrics.by_status?.error || 0
   const avg = Number(metrics.avg_processing_time_seconds || 0)
   const coverage = Number(metrics.evidence_coverage_rate || 0) * 100
+  const byReason = Object.entries(metrics.by_reason_code || {})
 
   const cells = [
     { label: 'Total', value: String(metrics.total_disputes || 0), tone: 'text-ink' },
@@ -57,28 +69,46 @@ export default function MetricsSummary({ refreshKey = 0 }) {
     <section className="surface-card overflow-hidden">
       <div className="border-b border-white/[0.06] px-6 py-4">
         <p className="eyebrow">Batch overview</p>
-        <h2 className="display-title mt-1 text-[22px] tracking-[-0.02em]">
-          Metrics summary
-        </h2>
+        <h2 className="display-title mt-1 text-[22px] tracking-[-0.02em]">Metrics summary</h2>
       </div>
       {error ? (
         <p className="px-6 py-4 text-sm text-[#F87171]">{error}</p>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-5">
-          {cells.map((cell, i) => (
-            <div
-              key={cell.label}
-              className={`px-6 py-5 ${i > 0 ? 'md:border-l md:border-white/[0.06]' : ''} ${i === 1 || i === 3 ? 'border-l border-white/[0.06]' : ''}`}
-            >
-              <div className={`font-mono text-2xl font-bold tabular-nums ${cell.tone}`}>
-                {cell.value}
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5">
+            {cells.map((cell, i) => (
+              <div
+                key={cell.label}
+                className={`px-6 py-5 ${i > 0 ? 'md:border-l md:border-white/[0.06]' : ''} ${
+                  i === 1 || i === 3 ? 'border-l border-white/[0.06]' : ''
+                }`}
+              >
+                <div className={`font-mono text-2xl font-bold tabular-nums ${cell.tone}`}>
+                  {cell.value}
+                </div>
+                <div className="mt-2 text-[11px] uppercase tracking-[0.08em] text-label">
+                  {cell.label}
+                </div>
               </div>
-              <div className="mt-2 text-[11px] uppercase tracking-[0.08em] text-label">
-                {cell.label}
+            ))}
+          </div>
+          {byReason.length > 0 ? (
+            <div className="border-t border-white/[0.06] px-6 py-4">
+              <p className="mb-3 text-[11px] uppercase tracking-[0.08em] text-label">By reason code</p>
+              <div className="flex flex-wrap gap-2">
+                {byReason.map(([code, count]) => (
+                  <span
+                    key={code}
+                    className="rounded-pill border border-white/[0.08] bg-elevated px-3 py-1.5 text-[12px] text-muted"
+                  >
+                    <span className="text-ink">{REASON_LABELS[code] || code}</span>
+                    <span className="ml-2 font-mono text-accent">{count}</span>
+                  </span>
+                ))}
               </div>
             </div>
-          ))}
-        </div>
+          ) : null}
+        </>
       )}
     </section>
   )

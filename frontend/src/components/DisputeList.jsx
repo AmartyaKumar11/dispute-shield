@@ -34,16 +34,19 @@ export default function DisputeList({
   }
 
   return (
-    <div className="max-h-[640px] overflow-y-auto">
-      {disputes.map((d) => {
+    <div className="max-h-[min(640px,70vh)] overflow-y-auto">
+      {disputes.map((d, index) => {
         const selected = d.id === selectedId
         const secs = d.processing_time_seconds
+        const display =
+          d.evidence_strategy?.display_name || d.reason_code.replaceAll('_', ' ')
         return (
           <button
             key={d.id}
             type="button"
             onClick={() => onSelect(d.id)}
-            className={`group flex w-full items-center gap-3 border-b border-white/[0.06] px-4 py-3.5 text-left transition-colors duration-150 animate-fadeIn hover:bg-elevated hover:border-white/[0.12] ${
+            style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
+            className={`group flex w-full items-center gap-3 border-b border-white/[0.06] px-4 py-3.5 text-left transition-colors duration-150 animate-fadeIn hover:bg-elevated ${
               selected ? 'border-l-2 border-l-accent bg-elevated' : 'border-l-2 border-l-transparent'
             }`}
           >
@@ -61,13 +64,13 @@ export default function DisputeList({
               }`}
             />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[13px] text-ink">{truncateId(d.id)}</span>
                 <StatusBadge status={d.status} />
               </div>
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="rounded-pill border border-white/[0.08] bg-page px-2 py-0.5 text-[11px] text-muted">
-                  {d.reason_code}
+              <div className="mt-1.5">
+                <span className="rounded-pill border border-white/[0.08] bg-page px-2 py-0.5 text-[11px] capitalize text-muted">
+                  {display}
                 </span>
               </div>
             </div>

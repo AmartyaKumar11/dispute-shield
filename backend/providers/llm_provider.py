@@ -92,7 +92,7 @@ class KimiLLMProvider(LLMProvider):
         shipping_info: ShippingInfo | None,
         refund_data: list[dict],
         comms_data: list[EmailRecord],
-    ) -> str:
+    ) -> tuple[str, bool]:
         user_prompt = _build_user_prompt(
             reason_code,
             letter_focus,
@@ -138,13 +138,16 @@ class KimiLLMProvider(LLMProvider):
                     content = (message.get("content") or "").strip()
                     if content:
                         log.info("llm.letter_generated", model=model, chars=len(content))
-                        return content
+                        return content, False
                     last_error = RuntimeError(f"LLM {model} returned empty content")
             raise last_error or RuntimeError("LLM returned empty content")
         except Exception:
             log.exception("llm.fallback_letter")
-            return _fallback_letter(
-                reason_code, letter_focus, payment_data, order_data, shipping_info
+            return (
+                _fallback_letter(
+                    reason_code, letter_focus, payment_data, order_data, shipping_info
+                ),
+                True,
             )
 
 

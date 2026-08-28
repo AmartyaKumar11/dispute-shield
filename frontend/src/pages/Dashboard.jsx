@@ -3,7 +3,7 @@ import DisputeDetail from '../components/DisputeDetail'
 import DisputeList from '../components/DisputeList'
 import MetricsSummary from '../components/MetricsSummary'
 import useDisputes from '../hooks/useDisputes'
-import { seedDisputes } from '../lib/api'
+import { apiErrorMessage, seedDisputes } from '../lib/api'
 
 export default function Dashboard() {
   const [refreshKey, setRefreshKey] = useState(0)
@@ -23,7 +23,7 @@ export default function Dashboard() {
       setRefreshKey((k) => k + 1)
       await reload()
     } catch (err) {
-      setSeedError(err.message || 'Seed failed')
+      setSeedError(apiErrorMessage(err))
     } finally {
       setSeeding(false)
     }

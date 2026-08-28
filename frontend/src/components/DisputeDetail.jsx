@@ -75,20 +75,26 @@ export default function DisputeDetail({ disputeId, onRetried }) {
   const strategy = dispute.evidence_strategy || {}
   const checklist = evidenceChecklist(dispute)
   const polling = !TERMINAL.has(dispute.status)
+  const usedFallback = Boolean(strategy.letter_fallback)
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="eyebrow">Dispute detail</p>
-          <h2 className="mt-1 font-mono text-[18px] font-semibold tracking-[-0.02em]">{dispute.id}</h2>
+          <h2 className="mt-1 break-all font-mono text-[16px] font-semibold tracking-[-0.02em] md:text-[18px]">
+            {dispute.id}
+          </h2>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <StatusBadge status={dispute.status} />
             <span className="rounded-pill border border-white/[0.08] px-2.5 py-1 text-[12px] text-muted">
               {strategy.display_name || dispute.reason_code}
             </span>
             {polling ? (
-              <span className="text-[11px] text-info animate-pulseSoft">Processing…</span>
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-info animate-pulseSoft">
+                <Loader2 size={12} className="animate-spin" />
+                Processing…
+              </span>
             ) : null}
           </div>
         </div>
@@ -100,7 +106,7 @@ export default function DisputeDetail({ disputeId, onRetried }) {
 
       <section>
         <p className="eyebrow mb-3">Evidence timeline</p>
-        <div className="elevated-card px-4 py-5">
+        <div className="elevated-card overflow-x-auto px-4 py-5">
           <EvidenceTimeline
             status={dispute.status}
             createdAt={formatDate(dispute.created_at)}
@@ -120,7 +126,7 @@ export default function DisputeDetail({ disputeId, onRetried }) {
             <p className="text-sm text-muted">Strategy not assigned yet.</p>
           ) : (
             checklist.map((item) => (
-              <div key={item.name} className="elevated-card flex items-center justify-between px-4 py-3">
+              <div key={item.name} className="elevated-card flex items-center justify-between gap-3 px-4 py-3">
                 <span className="text-[13px] capitalize text-ink">{prettyField(item.name)}</span>
                 <EvidenceState state={item.state} />
               </div>
@@ -130,7 +136,14 @@ export default function DisputeDetail({ disputeId, onRetried }) {
       </section>
 
       <section>
-        <p className="eyebrow mb-3">Generated explanation letter</p>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <p className="eyebrow">Generated explanation letter</p>
+          {usedFallback ? (
+            <span className="rounded-pill border border-warn/40 bg-warn/15 px-2 py-0.5 text-[11px] text-[#FBBF24]">
+              Fallback letter
+            </span>
+          ) : null}
+        </div>
         <div className="surface-card max-h-[320px] overflow-y-auto px-5 py-4">
           {dispute.explanation_letter ? (
             <pre className="whitespace-pre-wrap font-sans text-[14px] font-normal leading-[1.7] text-ink">
@@ -193,7 +206,10 @@ function EvidenceState({ state }) {
   }
   if (state === 'gap') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-[12px] text-[#FBBF24]">
+      <span
+        title="Gap — submitted without this evidence"
+        className="inline-flex cursor-help items-center gap-1.5 text-[12px] text-[#FBBF24]"
+      >
         <AlertTriangle size={14} /> Gap
       </span>
     )

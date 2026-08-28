@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
@@ -40,7 +40,7 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/api/seed/create-test-disputes")
-async def create_test_disputes() -> dict:
+async def create_test_disputes(background_tasks: BackgroundTasks) -> dict:
     from backend.seed.seed_disputes import seed_test_disputes
 
-    return await seed_test_disputes()
+    return await seed_test_disputes(background_tasks)

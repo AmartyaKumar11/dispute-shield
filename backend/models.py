@@ -54,10 +54,10 @@ class Dispute(Base):
                 strategy = None
 
         processing_time: float | None = None
-        if self.processing_started_at and self.processing_completed_at:
-            processing_time = (
-                self.processing_completed_at - self.processing_started_at
-            ).total_seconds()
+        if self.processing_completed_at:
+            start = self.created_at or self.processing_started_at
+            if start:
+                processing_time = (self.processing_completed_at - start).total_seconds()
 
         return DisputeResponse(
             id=self.id,

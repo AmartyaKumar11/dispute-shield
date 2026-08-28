@@ -1,9 +1,22 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  // Use 127.0.0.1 — Windows localhost often resolves to ::1 while uvicorn binds IPv4 only.
+  baseURL: 'http://127.0.0.1:8000',
   timeout: 120000,
 })
+
+export function apiErrorMessage(err) {
+  if (err.response?.data?.detail) {
+    const d = err.response.data.detail
+    return typeof d === 'string' ? d : JSON.stringify(d)
+  }
+  if (err.code === 'ECONNABORTED') return 'Request timed out — try again'
+  if (err.message === 'Network Error') {
+    return 'Cannot reach backend at http://127.0.0.1:8000 — is uvicorn running?'
+  }
+  return err.message || 'Request failed'
+}
 
 export async function getDisputes(params = {}) {
   const { data } = await api.get('/api/disputes', { params })
