@@ -8,7 +8,7 @@ from pathlib import Path
 import structlog
 
 from backend.database import AsyncSessionLocal
-from backend.models import Dispute
+from backend.models import Dispute, TransactionRisk
 from backend.providers.comms_provider import MockCommunicationProvider
 from backend.providers.llm_provider import KimiLLMProvider
 from backend.providers.razorpay_provider import RazorpayProvider
@@ -23,7 +23,9 @@ from backend.services.evidence_strategy import (
     get_strategy,
     shipping_is_gap,
 )
+from backend.services.triage import clamp_demo_win, decide_triage
 from backend.utils.helpers import jsonable, paise_to_rupees
+from sqlalchemy import select
 
 log = structlog.get_logger(__name__)
 
@@ -128,6 +130,18 @@ async def _run(dispute_id: str) -> None:
 
             provisional = _provisional_gathered(strategy, gaps, shipping, comms)
             coverage = evaluate_evidence_coverage(strategy, provisional)
+            missing_required = [
+                f for f in strategy.required_evidence if f not in provisional and f not in gaps
+            ]
+            # Gaps that are also required count as missing required
+            missing_required = list(
+                dict.fromkeys(
+                    [
+                        *missing_required,
+                        *[f for f in strategy.required_evidence if f in gaps],
+                    ]
+                )
+            )
             analysis = await analyze_evidence_strength(
                 dispute.reason_code,
                 payment,
@@ -148,18 +162,52 @@ async def _run(dispute_id: str) -> None:
                 has_comms=bool(comms),
                 has_refund=bool(refunds),
                 has_access_log="access_activity_log" in provisional,
+                missing_required=missing_required,
+                amount_paise=dispute.amount_paise,
             )
+            win_score = clamp_demo_win(payment, win.win_probability)
+            triage = decide_triage(win_score, win.reasoning)
             dispute.evidence_analysis_json = json.dumps(analysis.to_dict())
-            dispute.win_probability = win.win_probability
+            dispute.win_probability = win_score
             dispute.win_probability_reasoning = win.reasoning
+            dispute.triage_action = triage.action
+            dispute.review_reason = triage.review_reason
             await session.commit()
             log.info(
                 "pipeline.evidence_analyzed",
                 dispute_id=dispute_id,
                 strength=analysis.overall_strength,
-                win=win.win_probability,
+                win=win_score,
+                triage=triage.action,
                 analysis_fallback=analysis.used_fallback,
             )
+
+            await _mark_risk_dispute_filed(session, dispute.payment_id)
+
+            if triage.action == "accept":
+                dispute.status = "accepted"
+                dispute.summary_text = (
+                    f"Accepted {strategy.display_name} — win probability {win_score:.0f}%. "
+                    f"{triage.review_reason}"
+                )[:1000]
+                dispute.evidence_strategy = json.dumps(
+                    {
+                        "reason_code": strategy.reason_code,
+                        "display_name": strategy.display_name,
+                        "description": strategy.description,
+                        "required_evidence": strategy.required_evidence,
+                        "recommended_evidence": strategy.recommended_evidence,
+                        "letter_focus": strategy.letter_focus,
+                        "evidence_gaps": gaps,
+                        "coverage": coverage,
+                        "letter_fallback": None,
+                        "triage_action": "accept",
+                    }
+                )
+                dispute.processing_completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                await session.commit()
+                log.info("pipeline.accepted", dispute_id=dispute_id, win=win_score)
+                return
 
             letter_focus = strategy.letter_focus
             if "shipping_proof" in gaps:
@@ -176,46 +224,18 @@ async def _run(dispute_id: str) -> None:
             )
             dispute.explanation_letter = letter
 
-            docs: dict[str, str] = {}
-            evidence_fields: dict[str, list[str]] = {}
-            simulate = dispute.id.startswith("disp_simulated_") or dispute.payment_id.startswith(
-                "pay_simulated_"
+            docs, evidence_fields, coverage, used_fallback = await _build_docs(
+                dispute,
+                strategy,
+                payment,
+                order,
+                shipping,
+                comms,
+                letter,
+                gaps,
+                used_fallback,
             )
-
-            pdf_billing = document_builder.build_billing_proof(dispute.id, payment, order)
-            docs["billing_proof"] = await _upload(pdf_billing, "billing_proof", simulate)
-            evidence_fields["billing_proof"] = [docs["billing_proof"]]
-            evidence_fields["proof_of_service"] = [docs["billing_proof"]]
-            evidence_fields["term_and_conditions"] = [docs["billing_proof"]]
-            evidence_fields["refund_confirmation"] = [docs["billing_proof"]]
-            evidence_fields["refund_cancellation_policy"] = [docs["billing_proof"]]
-
-            pdf_ship = document_builder.build_shipping_proof(dispute.id, shipping)
-            if pdf_ship:
-                docs["shipping_proof"] = await _upload(pdf_ship, "shipping_proof", simulate)
-                evidence_fields["shipping_proof"] = [docs["shipping_proof"]]
-
-            pdf_letter = document_builder.build_explanation_letter(dispute.id, letter)
-            docs["explanation_letter"] = await _upload(pdf_letter, "explanation_letter", simulate)
-            evidence_fields["explanation_letter"] = [docs["explanation_letter"]]
-
-            pdf_comms = document_builder.build_customer_communication(dispute.id, comms)
-            if pdf_comms:
-                docs["customer_communication"] = await _upload(
-                    pdf_comms, "customer_communication", simulate
-                )
-                evidence_fields["customer_communication"] = [docs["customer_communication"]]
-
-            if (
-                "access_activity_log" in strategy.required_evidence
-                or "access_activity_log" in strategy.recommended_evidence
-            ):
-                pdf_log = document_builder.build_access_activity_log(dispute.id, payment)
-                docs["access_activity_log"] = await _upload(pdf_log, "access_activity_log", simulate)
-                evidence_fields["access_activity_log"] = [docs["access_activity_log"]]
-
-            gathered = set(evidence_fields)
-            coverage = evaluate_evidence_coverage(strategy, gathered)
+            dispute.documents_uploaded = json.dumps(docs)
             dispute.evidence_strategy = json.dumps(
                 {
                     "reason_code": strategy.reason_code,
@@ -227,24 +247,32 @@ async def _run(dispute_id: str) -> None:
                     "evidence_gaps": gaps,
                     "coverage": coverage,
                     "letter_fallback": used_fallback,
+                    "triage_action": triage.action,
                 }
             )
-            dispute.documents_uploaded = json.dumps(docs)
-
             summary = (
                 f"Contesting {strategy.display_name} on payment {dispute.payment_id} "
                 f"for Rs.{paise_to_rupees(dispute.amount_paise):.2f}. "
                 f"{strategy.letter_focus} "
-                f"Evidence: {', '.join(sorted(gathered))}."
+                f"Evidence: {', '.join(sorted(evidence_fields))}."
             )
             if gaps:
                 summary += f" Gaps: {', '.join(gaps)}."
             dispute.summary_text = summary[:1000]
-
             evidence_payload = {**evidence_fields, "summary": dispute.summary_text}
+
+            if triage.action == "review":
+                dispute.status = "review"
+                dispute.processing_completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                await session.commit()
+                log.info("pipeline.review", dispute_id=dispute_id, win=win_score)
+                return
+
             dispute.status = "submitting"
             await session.commit()
-
+            simulate = dispute.id.startswith("disp_simulated_") or dispute.payment_id.startswith(
+                "pay_simulated_"
+            )
             contest = await _contest(dispute.id, evidence_payload, simulate)
             dispute.contest_response_json = json.dumps(jsonable(contest))
             dispute.status = "submitted"
@@ -362,3 +390,125 @@ def _provisional_gathered(strategy, gaps: list[str], shipping, comms) -> set[str
     ):
         gathered.add("access_activity_log")
     return gathered
+
+
+async def _mark_risk_dispute_filed(session, payment_id: str) -> None:
+    row = (
+        await session.execute(select(TransactionRisk).where(TransactionRisk.payment_id == payment_id))
+    ).scalar_one_or_none()
+    if row is not None and row.alert_status != "dispute_filed":
+        row.alert_status = "dispute_filed"
+        await session.commit()
+
+
+async def _build_docs(
+    dispute: Dispute,
+    strategy,
+    payment: dict,
+    order: dict,
+    shipping,
+    comms,
+    letter: str,
+    gaps: list[str],
+    used_fallback: bool,
+) -> tuple[dict[str, str], dict[str, list[str]], float, bool]:
+    docs: dict[str, str] = {}
+    evidence_fields: dict[str, list[str]] = {}
+    simulate = dispute.id.startswith("disp_simulated_") or dispute.payment_id.startswith(
+        "pay_simulated_"
+    )
+    pdf_billing = document_builder.build_billing_proof(dispute.id, payment, order)
+    docs["billing_proof"] = await _upload(pdf_billing, "billing_proof", simulate)
+    evidence_fields["billing_proof"] = [docs["billing_proof"]]
+    evidence_fields["proof_of_service"] = [docs["billing_proof"]]
+    evidence_fields["term_and_conditions"] = [docs["billing_proof"]]
+    evidence_fields["refund_confirmation"] = [docs["billing_proof"]]
+    evidence_fields["refund_cancellation_policy"] = [docs["billing_proof"]]
+
+    pdf_ship = document_builder.build_shipping_proof(dispute.id, shipping)
+    if pdf_ship:
+        docs["shipping_proof"] = await _upload(pdf_ship, "shipping_proof", simulate)
+        evidence_fields["shipping_proof"] = [docs["shipping_proof"]]
+
+    pdf_letter = document_builder.build_explanation_letter(dispute.id, letter)
+    docs["explanation_letter"] = await _upload(pdf_letter, "explanation_letter", simulate)
+    evidence_fields["explanation_letter"] = [docs["explanation_letter"]]
+
+    pdf_comms = document_builder.build_customer_communication(dispute.id, comms)
+    if pdf_comms:
+        docs["customer_communication"] = await _upload(
+            pdf_comms, "customer_communication", simulate
+        )
+        evidence_fields["customer_communication"] = [docs["customer_communication"]]
+
+    if (
+        "access_activity_log" in strategy.required_evidence
+        or "access_activity_log" in strategy.recommended_evidence
+    ):
+        pdf_log = document_builder.build_access_activity_log(dispute.id, payment)
+        docs["access_activity_log"] = await _upload(pdf_log, "access_activity_log", simulate)
+        evidence_fields["access_activity_log"] = [docs["access_activity_log"]]
+
+    coverage = evaluate_evidence_coverage(strategy, set(evidence_fields))
+    return docs, evidence_fields, coverage, used_fallback
+
+
+async def force_submit_dispute(dispute_id: str) -> None:
+    """Submit a review/accepted dispute (uses existing package when available)."""
+    async with _pipeline_lock:
+        rebuild = False
+        async with AsyncSessionLocal() as session:
+            dispute = await session.get(Dispute, dispute_id)
+            if dispute is None:
+                raise ValueError("Dispute not found")
+            if dispute.status not in {"review", "accepted"}:
+                raise ValueError("Force submit only allowed for review or accepted disputes")
+
+            docs = json.loads(dispute.documents_uploaded or "{}")
+            if dispute.explanation_letter and docs:
+                evidence_payload: dict = {
+                    "summary": dispute.summary_text or "Merchant contest",
+                }
+                for key, doc_id in docs.items():
+                    evidence_payload[key] = [doc_id] if isinstance(doc_id, str) else doc_id
+                dispute.status = "submitting"
+                dispute.triage_action = "auto_submit"
+                await session.commit()
+                simulate = dispute.id.startswith("disp_simulated_") or dispute.payment_id.startswith(
+                    "pay_simulated_"
+                )
+                contest = await _contest(dispute.id, evidence_payload, simulate)
+                dispute.contest_response_json = json.dumps(jsonable(contest))
+                dispute.status = "submitted"
+                dispute.processing_completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                await session.commit()
+                return
+
+            payment = json.loads(dispute.payment_data_json or "{}")
+            notes = payment.get("notes") if isinstance(payment.get("notes"), dict) else {}
+            notes = {**notes, "demo_triage": "auto_submit"}
+            payment["notes"] = notes
+            dispute.payment_data_json = json.dumps(payment)
+            dispute.status = "received"
+            dispute.triage_action = None
+            dispute.review_reason = None
+            await session.commit()
+            rebuild = True
+
+        if rebuild:
+            await _run(dispute_id)
+
+
+async def accept_dispute(dispute_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        dispute = await session.get(Dispute, dispute_id)
+        if dispute is None:
+            raise ValueError("Dispute not found")
+        if dispute.status not in {"review", "assembled", "received", "gathering"}:
+            raise ValueError("Accept only allowed for open/review disputes")
+        dispute.status = "accepted"
+        dispute.triage_action = "accept"
+        dispute.review_reason = dispute.review_reason or "Manually accepted by merchant"
+        dispute.processing_completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        await session.commit()
+

@@ -7,9 +7,10 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
-from backend.models import Dispute, WebhookPayload
+from backend.models import Dispute, TransactionRisk, WebhookPayload
 from backend.services.dispute_service import process_dispute
 from backend.utils.helpers import unix_to_naive
+from sqlalchemy import select
 
 router = APIRouter()
 
@@ -89,6 +90,13 @@ async def razorpay_webhook(
         payment_data_json=json.dumps(payment_entity) if payment_entity else None,
     )
     session.add(dispute)
+    risk = (
+        await session.execute(
+            select(TransactionRisk).where(TransactionRisk.payment_id == str(payment_id))
+        )
+    ).scalar_one_or_none()
+    if risk is not None:
+        risk.alert_status = "dispute_filed"
     await session.commit()
     background_tasks.add_task(process_dispute, dispute.id)
     return {"status": "ok", "id": dispute.id}

@@ -20,6 +20,31 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_sqlite_add_missing_columns)
+
+
+def _sqlite_add_missing_columns(sync_conn) -> None:
+    """SQLite create_all won't ALTER existing tables — add new columns if missing."""
+    from sqlalchemy import text
+
+    defs = {
+        "disputes": {
+            "evidence_analysis_json": "TEXT",
+            "win_probability": "FLOAT",
+            "win_probability_reasoning": "TEXT",
+            "triage_action": "VARCHAR",
+            "review_reason": "TEXT",
+        },
+    }
+    for table, cols in defs.items():
+        existing = {
+            row[1]
+            for row in sync_conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        }
+        for col, typ in cols.items():
+            if col not in existing:
+                sync_conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
+
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Check, Loader2, Minus, RefreshCw } from 'lucide-react'
-import { getDispute, retryDispute } from '../lib/api'
+import { getDispute, retryDispute, forceSubmitDispute, acceptDispute } from '../lib/api'
 import { evidenceChecklist, formatDate, formatRupees, TERMINAL } from '../lib/format'
 import EvidenceTimeline from './EvidenceTimeline'
 import AIReasoning from './AIReasoning'
@@ -15,6 +15,7 @@ export default function DisputeDetail({ disputeId, onRetried }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [retrying, setRetrying] = useState(false)
+  const [acting, setActing] = useState(false)
 
   useEffect(() => {
     if (!disputeId) {
@@ -77,6 +78,15 @@ export default function DisputeDetail({ disputeId, onRetried }) {
   const checklist = evidenceChecklist(dispute)
   const polling = !TERMINAL.has(dispute.status)
   const usedFallback = Boolean(strategy.letter_fallback)
+  const win = dispute.win_probability
+  const winTone =
+    win == null
+      ? 'border-white/20 text-muted bg-white/5'
+      : win > 70
+        ? 'border-accent/50 text-[#4ADE80] bg-accent/10'
+        : win >= 40
+          ? 'border-warn/50 text-[#FBBF24] bg-warn/10'
+          : 'border-danger/40 text-[#F87171] bg-danger/10'
 
   return (
     <div className="space-y-6 p-6">
@@ -87,10 +97,15 @@ export default function DisputeDetail({ disputeId, onRetried }) {
             {dispute.id}
           </h2>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <StatusBadge status={dispute.status} />
+            <StatusBadge status={dispute.status} triage={dispute.triage_action} />
             <span className="rounded-pill border border-white/[0.08] px-2.5 py-1 text-[12px] text-muted">
               {strategy.display_name || dispute.reason_code}
             </span>
+            {dispute.triage_action ? (
+              <span className="rounded-pill border border-white/[0.08] px-2.5 py-1 text-[11px] uppercase text-label">
+                {dispute.triage_action.replaceAll('_', ' ')}
+              </span>
+            ) : null}
             {polling ? (
               <span className="inline-flex items-center gap-1.5 text-[11px] text-info animate-pulseSoft">
                 <Loader2 size={12} className="animate-spin" />
@@ -99,11 +114,95 @@ export default function DisputeDetail({ disputeId, onRetried }) {
             ) : null}
           </div>
         </div>
-        <div className="text-right">
-          <div className="font-mono text-[22px] font-bold">{formatRupees(dispute.amount_rupees)}</div>
-          <div className="mt-1 text-[12px] text-muted">Respond by {formatDate(dispute.respond_by)}</div>
+        <div className="flex items-start gap-4 text-right">
+          {win != null ? (
+            <div
+              className={`flex h-16 w-16 flex-col items-center justify-center rounded-full border-2 ${winTone}`}
+            >
+              <span className="font-mono text-[16px] font-bold">{Number(win).toFixed(0)}</span>
+              <span className="text-[9px] uppercase text-muted">win%</span>
+            </div>
+          ) : null}
+          <div>
+            <div className="font-mono text-[22px] font-bold">{formatRupees(dispute.amount_rupees)}</div>
+            <div className="mt-1 text-[12px] text-muted">Respond by {formatDate(dispute.respond_by)}</div>
+          </div>
         </div>
       </div>
+
+      {dispute.status === 'review' ? (
+        <section className="elevated-card space-y-3 px-4 py-4">
+          <p className="text-sm text-[#FBBF24]">Needs review — contest package ready, not submitted.</p>
+          {dispute.review_reason ? (
+            <p className="text-[13px] text-muted">{dispute.review_reason}</p>
+          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                try {
+                  setActing(true)
+                  await forceSubmitDispute(dispute.id)
+                  onRetried?.(dispute.id)
+                } catch (err) {
+                  setError(err.message || 'Submit failed')
+                } finally {
+                  setActing(false)
+                }
+              }}
+              className="rounded-pill bg-accent px-4 py-2 text-[13px] font-medium text-page hover:bg-accent-hover disabled:opacity-60"
+            >
+              Submit Contest
+            </button>
+            <button
+              type="button"
+              disabled={acting}
+              onClick={async () => {
+                try {
+                  setActing(true)
+                  await acceptDispute(dispute.id)
+                  onRetried?.(dispute.id)
+                } catch (err) {
+                  setError(err.message || 'Accept failed')
+                } finally {
+                  setActing(false)
+                }
+              }}
+              className="rounded-pill border border-white/15 px-4 py-2 text-[13px] text-ink hover:bg-elevated disabled:opacity-60"
+            >
+              Accept Dispute
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {dispute.status === 'accepted' ? (
+        <section className="elevated-card space-y-3 px-4 py-4">
+          <p className="text-sm text-muted">Dispute accepted — contest skipped.</p>
+          {dispute.review_reason ? (
+            <p className="text-[13px] text-muted">{dispute.review_reason}</p>
+          ) : null}
+          <button
+            type="button"
+            disabled={acting}
+            onClick={async () => {
+              try {
+                setActing(true)
+                await forceSubmitDispute(dispute.id)
+                onRetried?.(dispute.id)
+              } catch (err) {
+                setError(err.message || 'Contest failed')
+              } finally {
+                setActing(false)
+              }
+            }}
+            className="rounded-pill bg-accent px-4 py-2 text-[13px] font-medium text-page hover:bg-accent-hover disabled:opacity-60"
+          >
+            Contest Anyway
+          </button>
+        </section>
+      ) : null}
 
       <section>
         <p className="eyebrow mb-3">Evidence timeline</p>
@@ -152,6 +251,8 @@ export default function DisputeDetail({ disputeId, onRetried }) {
             <pre className="whitespace-pre-wrap font-sans text-[14px] font-normal leading-[1.7] text-ink">
               {dispute.explanation_letter}
             </pre>
+          ) : dispute.status === 'accepted' ? (
+            <p className="py-6 text-sm text-muted">Letter skipped — dispute accepted.</p>
           ) : (
             <div className="flex items-center gap-2 py-8 text-muted">
               <Loader2 className="animate-spin" size={16} />

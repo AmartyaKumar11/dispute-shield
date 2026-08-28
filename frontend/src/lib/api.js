@@ -43,4 +43,29 @@ export async function retryDispute(id) {
   return data
 }
 
+export async function forceSubmitDispute(id) {
+  const { data } = await api.post(`/api/disputes/${id}/force-submit`)
+  return data
+}
+
+export async function acceptDispute(id) {
+  const { data } = await api.post(`/api/disputes/${id}/accept`)
+  return data
+}
+
+export async function getRisks() {
+  const { data } = await api.get('/api/risks')
+  return data
+}
+
+export async function getRiskSummary() {
+  const { data } = await api.get('/api/risks/summary')
+  return data
+}
+
+export async function getIntelligence() {
+  const { data } = await api.get('/api/intelligence/insights')
+  return data
+}
+
 export default api

@@ -1,4 +1,4 @@
-export const TERMINAL = new Set(['submitted', 'won', 'lost', 'error'])
+export const TERMINAL = new Set(['submitted', 'won', 'lost', 'error', 'review', 'accepted'])
 
 const RUPEE = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -42,7 +42,7 @@ export function evidenceChecklist(dispute) {
   const gaps = strategy.evidence_gaps || []
   const fields = [...new Set([...required, ...recommended, ...gaps])]
   const gapSet = new Set(gaps)
-  const progressed = ['assembled', 'submitting', 'submitted', 'won', 'lost'].includes(
+  const progressed = ['assembled', 'submitting', 'submitted', 'won', 'lost', 'review', 'accepted'].includes(
     dispute?.status,
   )
 

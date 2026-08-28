@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     skip_webhook_validation: bool = True
 
+    win_prob_auto_submit: float = 70.0
+    win_prob_review: float = 40.0
+
     @property
     def is_development(self) -> bool:
         return self.app_env.lower() == "development"

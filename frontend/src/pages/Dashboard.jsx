@@ -1,11 +1,20 @@
 import { useState } from 'react'
 import DisputeDetail from '../components/DisputeDetail'
 import DisputeList from '../components/DisputeList'
+import IntelligencePanel from '../components/IntelligencePanel'
 import MetricsSummary from '../components/MetricsSummary'
+import RiskAlerts from '../components/RiskAlerts'
 import useDisputes from '../hooks/useDisputes'
 import { apiErrorMessage, seedDisputes } from '../lib/api'
 
+const TABS = [
+  { id: 'risks', label: 'Risk Alerts' },
+  { id: 'disputes', label: 'Disputes' },
+  { id: 'intelligence', label: 'Intelligence' },
+]
+
 export default function Dashboard() {
+  const [tab, setTab] = useState('disputes')
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedId, setSelectedId] = useState(null)
   const [seeding, setSeeding] = useState(false)
@@ -31,8 +40,8 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-page text-ink">
-      <header className="sticky top-0 z-20 h-14 border-b border-white/[0.06] bg-page">
-        <div className="mx-auto flex h-full max-w-shell items-center justify-between px-6">
+      <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-page">
+        <div className="mx-auto flex h-14 max-w-shell items-center justify-between px-6">
           <div className="display-title text-[28px] leading-none">DisputeShield</div>
           <button
             type="button"
@@ -50,48 +59,78 @@ export default function Dashboard() {
             )}
           </button>
         </div>
+        <nav className="mx-auto flex max-w-shell gap-6 px-6">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`border-b-2 pb-3 text-[13px] font-medium transition-colors ${
+                tab === t.id
+                  ? 'border-accent text-ink'
+                  : 'border-transparent text-muted hover:text-ink'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
       <main className="mx-auto max-w-shell space-y-8 px-6 py-8">
         <div>
           <p className="eyebrow">AI risk manager</p>
           <h1 className="display-title mt-2 text-[28px] tracking-[-0.02em]">
-            Chargeback evidence auto-assembler
+            Predict · Respond · Learn
           </h1>
           <p className="mt-2 max-w-2xl text-[14px] font-normal leading-[1.6] text-muted">
-            Watch disputes move from webhook to contested evidence package — strategy, shipping
-            mocks, LLM letter, and submission status in one view.
+            Full merchant dispute lifecycle — pre-dispute risk scoring, evidence triage, and
+            prevention intelligence.
           </p>
           {seedError ? <p className="mt-3 text-sm text-[#F87171]">{seedError}</p> : null}
         </div>
 
-        <MetricsSummary refreshKey={refreshKey} />
+        {tab === 'risks' ? (
+          <RiskAlerts
+            refreshKey={refreshKey}
+            onOpenDispute={(id) => {
+              setSelectedId(id)
+              setTab('disputes')
+            }}
+          />
+        ) : null}
 
-        <section className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
-          <div className="surface-card overflow-hidden">
-            <div className="border-b border-white/[0.06] px-5 py-4">
-              <p className="eyebrow">Incoming disputes</p>
-              <h2 className="mt-1 text-[15px] font-medium">Dispute list</h2>
-            </div>
-            <DisputeList
-              disputes={disputes}
-              loading={loading}
-              selectedId={activeId}
-              onSelect={setSelectedId}
-              error={error}
-            />
-          </div>
+        {tab === 'disputes' ? (
+          <>
+            <MetricsSummary refreshKey={refreshKey} />
+            <section className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
+              <div className="surface-card overflow-hidden">
+                <div className="border-b border-white/[0.06] px-5 py-4">
+                  <p className="eyebrow">Incoming disputes</p>
+                  <h2 className="mt-1 text-[15px] font-medium">Dispute list</h2>
+                </div>
+                <DisputeList
+                  disputes={disputes}
+                  loading={loading}
+                  selectedId={activeId}
+                  onSelect={setSelectedId}
+                  error={error}
+                />
+              </div>
+              <div className="surface-card min-h-[520px] overflow-hidden">
+                <DisputeDetail
+                  disputeId={activeId}
+                  onRetried={() => {
+                    setRefreshKey((k) => k + 1)
+                    reload()
+                  }}
+                />
+              </div>
+            </section>
+          </>
+        ) : null}
 
-          <div className="surface-card min-h-[520px] overflow-hidden">
-            <DisputeDetail
-              disputeId={activeId}
-              onRetried={() => {
-                setRefreshKey((k) => k + 1)
-                reload()
-              }}
-            />
-          </div>
-        </section>
+        {tab === 'intelligence' ? <IntelligencePanel refreshKey={refreshKey} /> : null}
       </main>
     </div>
   )

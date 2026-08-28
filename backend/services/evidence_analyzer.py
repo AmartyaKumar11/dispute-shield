@@ -83,6 +83,8 @@ async def predict_win_probability(
     has_comms: bool = False,
     has_refund: bool = False,
     has_access_log: bool = False,
+    missing_required: list[str] | None = None,
+    amount_paise: int = 0,
 ) -> WinPrediction:
     rule_score = _rule_win_score(
         reason_code,
@@ -93,6 +95,8 @@ async def predict_win_probability(
         has_comms,
         has_refund,
         has_access_log,
+        missing_required or [],
+        amount_paise,
     )
     llm_score = evidence_analysis.llm_win_probability
     if llm_score is None:
@@ -137,10 +141,14 @@ def _rule_win_score(
     has_comms: bool,
     has_refund: bool,
     has_access_log: bool,
+    missing_required: list[str] | None = None,
+    amount_paise: int = 0,
 ) -> float:
     score = 50.0
     if shipping_info is not None and shipping_info.status == "delivered":
         score += 15.0
+        if shipping_info.signed_by:
+            score += 5.0
     if has_billing:
         score += 10.0
     if has_comms:
@@ -149,9 +157,14 @@ def _rule_win_score(
         score += 20.0
     if evidence_coverage > 0.90:
         score += 5.0
+    if evidence_coverage < 0.60:
+        score -= 15.0
     score -= 10.0 * len(evidence_gaps)
+    score -= 10.0 * len(missing_required or [])
     if reason_code == "fraud" and not has_access_log:
         score -= 15.0
+    if amount_paise > 1_000_000:
+        score -= 5.0
     return max(0.0, min(100.0, score))
 
 

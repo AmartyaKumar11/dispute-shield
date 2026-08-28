@@ -14,6 +14,8 @@ function statusIndex(status) {
     gathering: 1,
     assembled: 2,
     submitting: 3,
+    review: 3,
+    accepted: 2,
     submitted: 3,
     won: 4,
     lost: 4,
@@ -56,7 +58,7 @@ export default function EvidenceTimeline({ status, createdAt, completedAt }) {
                 {i === 0 && createdAt ? (
                   <span className="mt-1 font-mono text-[10px] text-label">{createdAt}</span>
                 ) : null}
-                {i === 3 && completedAt && ['submitted', 'won', 'lost'].includes(status) ? (
+                {i === 3 && completedAt && ['submitted', 'won', 'lost', 'review'].includes(status) ? (
                   <span className="mt-1 font-mono text-[10px] text-label">{completedAt}</span>
                 ) : null}
               </div>

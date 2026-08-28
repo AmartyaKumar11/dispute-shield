@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
 from backend.models import Dispute, DisputeListResponse, DisputeResponse
-from backend.services.dispute_service import process_dispute
+from backend.services.dispute_service import accept_dispute, force_submit_dispute, process_dispute
 
 router = APIRouter(prefix="/api")
 
@@ -54,3 +54,36 @@ async def retry_dispute(
         )
     background_tasks.add_task(process_dispute, dispute_id)
     return {"status": "retrying", "id": dispute_id}
+
+
+@router.post("/disputes/{dispute_id}/force-submit")
+async def force_submit(
+    dispute_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    dispute = await session.get(Dispute, dispute_id)
+    if dispute is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found")
+    if dispute.status not in {"review", "accepted"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Force submit only for review or accepted disputes",
+        )
+    background_tasks.add_task(force_submit_dispute, dispute_id)
+    return {"status": "submitting", "id": dispute_id}
+
+
+@router.post("/disputes/{dispute_id}/accept")
+async def accept(
+    dispute_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    dispute = await session.get(Dispute, dispute_id)
+    if dispute is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found")
+    try:
+        await accept_dispute(dispute_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"status": "accepted", "id": dispute_id}

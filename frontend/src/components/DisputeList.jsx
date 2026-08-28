@@ -66,7 +66,20 @@ export default function DisputeList({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[13px] text-ink">{truncateId(d.id)}</span>
-                <StatusBadge status={d.status} />
+                <StatusBadge status={d.status} triage={d.triage_action} />
+                {d.win_probability != null ? (
+                  <span
+                    className={`font-mono text-[11px] ${
+                      d.win_probability > 70
+                        ? 'text-[#4ADE80]'
+                        : d.win_probability >= 40
+                          ? 'text-[#FBBF24]'
+                          : 'text-[#F87171]'
+                    }`}
+                  >
+                    {Number(d.win_probability).toFixed(0)}%
+                  </span>
+                ) : null}
               </div>
               <div className="mt-1.5">
                 <span className="rounded-pill border border-white/[0.08] bg-page px-2 py-0.5 text-[11px] capitalize text-muted">
