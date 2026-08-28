@@ -93,6 +93,63 @@ EVIDENCE_STRATEGIES: dict[str, EvidenceStrategy] = {
             "delivery, and customer authorization."
         ),
     ),
+    "upi_goods_not_provided": EvidenceStrategy(
+        reason_code="upi_goods_not_provided",
+        display_name="UPI — Goods/Services Not Provided",
+        description="Customer claims goods or services were not delivered (UPI)",
+        required_evidence=["shipping_proof", "explanation_letter"],
+        recommended_evidence=["billing_proof", "customer_communication"],
+        letter_focus=(
+            "Present UPI transaction reference, delivery confirmation with tracking details, "
+            "and proof of service completion. Reference the VPA and bank reference number to "
+            "establish transaction legitimacy."
+        ),
+    ),
+    "upi_duplicate_transaction": EvidenceStrategy(
+        reason_code="upi_duplicate_transaction",
+        display_name="UPI — Duplicate Transaction",
+        description="Customer charged twice for the same order (UPI)",
+        required_evidence=["billing_proof", "explanation_letter"],
+        recommended_evidence=["refund_confirmation", "access_activity_log"],
+        letter_focus=(
+            "Show that each transaction corresponds to a separate order with distinct order IDs "
+            "and items. If a duplicate did occur, present the refund confirmation with UTR number."
+        ),
+    ),
+    "upi_incorrect_amount": EvidenceStrategy(
+        reason_code="upi_incorrect_amount",
+        display_name="UPI — Incorrect Amount Charged",
+        description="Customer claims they were charged a different amount (UPI)",
+        required_evidence=["billing_proof", "explanation_letter", "proof_of_service"],
+        recommended_evidence=["customer_communication"],
+        letter_focus=(
+            "Present the order confirmation showing the agreed amount, the checkout page consent, "
+            "and the UPI collect/pay request showing the exact amount the customer approved."
+        ),
+    ),
+    "upi_unauthorized": EvidenceStrategy(
+        reason_code="upi_unauthorized",
+        display_name="UPI — Unauthorized Transaction",
+        description="Customer claims they did not authorize the UPI payment",
+        required_evidence=["access_activity_log", "billing_proof", "explanation_letter"],
+        recommended_evidence=["customer_communication", "proof_of_service"],
+        letter_focus=(
+            "UPI payments require the customer to enter their PIN on their own device. Present the "
+            "UPI transaction ID, VPA used, device metadata, and timestamp. Emphasize that UPI "
+            "PIN-based authorization means the customer actively approved the payment."
+        ),
+    ),
+    "upi_beneficiary_claim": EvidenceStrategy(
+        reason_code="upi_beneficiary_claim",
+        display_name="UPI — Beneficiary Credit Not Received",
+        description="Merchant claims payment was made but not credited",
+        required_evidence=["billing_proof", "explanation_letter"],
+        recommended_evidence=["access_activity_log"],
+        letter_focus=(
+            "Present the Razorpay settlement report showing the payment was received and credited. "
+            "Include the UTR number and settlement ID as proof of credit."
+        ),
+    ),
 }
 
 _REQ_WEIGHT = 1.0

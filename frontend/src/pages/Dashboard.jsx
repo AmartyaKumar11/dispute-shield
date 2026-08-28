@@ -3,12 +3,12 @@ import DisputeDetail from '../components/DisputeDetail'
 import DisputeList from '../components/DisputeList'
 import IntelligencePanel from '../components/IntelligencePanel'
 import MetricsSummary from '../components/MetricsSummary'
-import RiskAlerts from '../components/RiskAlerts'
+import ShieldPanel from '../components/ShieldPanel'
 import useDisputes from '../hooks/useDisputes'
 import { apiErrorMessage, seedDisputes } from '../lib/api'
 
 const TABS = [
-  { id: 'risks', label: 'Risk Alerts' },
+  { id: 'risks', label: 'Shield' },
   { id: 'disputes', label: 'Disputes' },
   { id: 'intelligence', label: 'Intelligence' },
 ]
@@ -91,7 +91,7 @@ export default function Dashboard() {
         </div>
 
         {tab === 'risks' ? (
-          <RiskAlerts
+          <ShieldPanel
             refreshKey={refreshKey}
             onOpenDispute={(id) => {
               setSelectedId(id)

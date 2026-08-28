@@ -102,17 +102,23 @@ class TransactionRisk(Base):
     payment_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     order_id: Mapped[str | None] = mapped_column(String, nullable=True)
     amount_paise: Mapped[int] = mapped_column(Integer, default=0)
+    payment_method: Mapped[str] = mapped_column(String, default="card")
     risk_score: Mapped[float] = mapped_column(Float, nullable=False)
     risk_level: Mapped[str] = mapped_column(String, nullable=False)
     risk_factors_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommended_actions_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     predicted_dispute_type: Mapped[str | None] = mapped_column(String, nullable=True)
     alert_status: Mapped[str] = mapped_column(String, default="active")
+    vault_fields_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vault_timeline_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_data_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     def to_response(self, dispute_id: str | None = None) -> RiskResponse:
         factors = []
         actions = []
+        vault_fields: list = []
+        timeline: list = []
         try:
             factors = json.loads(self.risk_factors_json or "[]")
         except json.JSONDecodeError:
@@ -121,17 +127,30 @@ class TransactionRisk(Base):
             actions = json.loads(self.recommended_actions_json or "[]")
         except json.JSONDecodeError:
             actions = []
+        try:
+            vault_fields = json.loads(self.vault_fields_json or "[]")
+        except json.JSONDecodeError:
+            vault_fields = []
+        try:
+            timeline = json.loads(self.vault_timeline_json or "[]")
+        except json.JSONDecodeError:
+            timeline = []
         return RiskResponse(
             id=self.id,
             payment_id=self.payment_id,
             order_id=self.order_id,
             amount_rupees=self.amount_paise / 100,
+            payment_method=self.payment_method or "card",
             risk_score=self.risk_score,
             risk_level=self.risk_level,
             risk_factors=factors if isinstance(factors, list) else [],
             recommended_actions=actions if isinstance(actions, list) else [],
             predicted_dispute_type=self.predicted_dispute_type,
             alert_status=self.alert_status,
+            vault_fields=vault_fields if isinstance(vault_fields, list) else [],
+            vault_timeline=timeline if isinstance(timeline, list) else [],
+            vault_field_count=len(vault_fields) if isinstance(vault_fields, list) else 0,
+            vault_field_total=5,
             dispute_id=dispute_id,
             created_at=self.created_at,
         )
@@ -169,12 +188,17 @@ class RiskResponse(BaseModel):
     payment_id: str
     order_id: str | None
     amount_rupees: float
+    payment_method: str = "card"
     risk_score: float
     risk_level: str
     risk_factors: list[dict]
     recommended_actions: list[str]
     predicted_dispute_type: str | None
     alert_status: str
+    vault_fields: list[str] = Field(default_factory=list)
+    vault_timeline: list[dict] = Field(default_factory=list)
+    vault_field_count: int = 0
+    vault_field_total: int = 5
     dispute_id: str | None = None
     created_at: datetime
 
@@ -191,6 +215,10 @@ class RiskSummary(BaseModel):
     alerts_that_became_disputes: int
     prediction_accuracy: float
     avg_risk_score: float
+    transactions_protected: int = 0
+    evidence_fields_precollected: int = 0
+    disputes_anticipated: int = 0
+    vault_hit_rate: float = 0.0
 
 
 class MetricsSummary(BaseModel):

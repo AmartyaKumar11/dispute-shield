@@ -17,32 +17,49 @@ from backend.utils.helpers import unix_to_naive
 
 log = structlog.get_logger(__name__)
 
-# 12 disputes — triage bands via demo_triage for a natural mix (~7/3/2)
-TEST_SCENARIOS: list[dict] = [
+_VPAS = ("customer@okicici", "buyer@ybl", "user@paytm", "shopper@oksbi", "payee@ibl")
+_SIGNED = ("Ramesh Kumar", "Sita Devi", "Mohammed Ali", "Lakshmi Nair", "Deepak Rao")
+
+# 12 card/mixed disputes — index 10 is FN (low score forced later)
+CARD_DISPUTES: list[dict] = [
     {"amount": 120000, "reason": "product_not_received", "product": "Wireless Headphones", "demo_triage": "auto_submit", "method": "card", "city_tier": 1, "hour": 14},
     {"amount": 340000, "reason": "fraud", "product": "Laptop Stand", "demo_triage": "auto_submit", "method": "card", "city_tier": 1, "hour": 11, "orders_last_24h": 1},
-    {"amount": 89000, "reason": "credit_not_processed", "product": "Phone Case", "demo_triage": "auto_submit", "method": "upi", "city_tier": 1, "hour": 10},
+    {"amount": 89000, "reason": "credit_not_processed", "product": "Phone Case", "demo_triage": "auto_submit", "method": "card", "city_tier": 1, "hour": 10},
     {"amount": 250000, "reason": "chargeback", "product": "Running Shoes", "demo_triage": "auto_submit", "method": "card", "city_tier": 2, "hour": 16},
-    {"amount": 45000, "reason": "product_not_as_described", "product": "USB Cable", "demo_triage": "auto_submit", "method": "upi", "city_tier": 1, "hour": 12},
+    {"amount": 45000, "reason": "product_not_as_described", "product": "USB Cable", "demo_triage": "auto_submit", "method": "card", "city_tier": 1, "hour": 12},
     {"amount": 780000, "reason": "subscription_canceled", "product": "Annual SaaS Plan", "demo_triage": "auto_submit", "method": "card", "city_tier": 1, "hour": 9},
     {"amount": 150000, "reason": "general", "product": "Bluetooth Speaker", "demo_triage": "auto_submit", "method": "card", "city_tier": 1, "hour": 15},
     {"amount": 210000, "reason": "product_not_received", "product": "Watch Strap", "demo_triage": "review", "method": "card", "city_tier": 3, "hour": 23},
     {"amount": 67000, "reason": "fraud", "product": "Earbuds", "demo_triage": "review", "method": "card", "city_tier": 2, "hour": 2, "orders_last_24h": 3},
     {"amount": 430000, "reason": "chargeback", "product": "Backpack", "demo_triage": "review", "method": "card", "city_tier": 2, "hour": 20},
-    {"amount": 95000, "reason": "credit_not_processed", "product": "Charger", "demo_triage": "accept", "method": "card", "city_tier": 3, "hour": 1},
-    {"amount": 185000, "reason": "product_not_as_described", "product": "T-Shirt", "demo_triage": "accept", "method": "cod", "city_tier": 3, "hour": 3},
+    # False negative: will force risk_score < 50 but still dispute
+    {"amount": 95000, "reason": "credit_not_processed", "product": "Charger", "demo_triage": "accept", "method": "card", "city_tier": 1, "hour": 11, "force_risk": 28, "metric_role": "fn"},
+    {"amount": 185000, "reason": "product_not_as_described", "product": "T-Shirt", "demo_triage": "accept", "method": "card", "city_tier": 3, "hour": 3},
 ]
 
-# 8 healthy transactions — low risk, never disputed
-HEALTHY_TXNS: list[dict] = [
-    {"amount": 49900, "product": "Notebook Set", "method": "upi", "city_tier": 1, "hour": 11},
-    {"amount": 129900, "product": "Kitchen Towels", "method": "upi", "city_tier": 1, "hour": 14},
-    {"amount": 79900, "product": "Water Bottle", "method": "upi", "city_tier": 1, "hour": 10},
-    {"amount": 24900, "product": "Stationery Pack", "method": "upi", "city_tier": 1, "hour": 16},
-    {"amount": 159900, "product": "Desk Organizer", "method": "upi", "city_tier": 1, "hour": 12},
-    {"amount": 99900, "product": "Phone Stand", "method": "upi", "city_tier": 1, "hour": 13},
-    {"amount": 34900, "product": "Socks Pack", "method": "upi", "city_tier": 1, "hour": 15},
-    {"amount": 59900, "product": "Mouse Pad", "method": "upi", "city_tier": 1, "hour": 17},
+# 3 UPI disputes
+UPI_DISPUTES: list[dict] = [
+    {"amount": 275000, "reason": "upi_goods_not_provided", "product": "Smart Watch", "demo_triage": "auto_submit", "method": "upi", "city_tier": 2, "hour": 14, "vpa": "buyer@ybl"},
+    {"amount": 199000, "reason": "upi_unauthorized", "product": "Gaming Mouse", "demo_triage": "review", "method": "upi", "city_tier": 1, "hour": 22, "vpa": "user@paytm", "orders_last_24h": 2},
+    {"amount": 149000, "reason": "upi_duplicate_transaction", "product": "USB Hub", "demo_triage": "auto_submit", "method": "upi", "city_tier": 1, "hour": 13, "vpa": "customer@okicici"},
+]
+
+# Clean txs: 8 low + 2 FP (high risk, no dispute) + 2 clean UPI
+CLEAN_TXNS: list[dict] = [
+    {"amount": 49900, "product": "Notebook Set", "method": "upi", "city_tier": 1, "hour": 11, "force_risk": 12},
+    {"amount": 129900, "product": "Kitchen Towels", "method": "upi", "city_tier": 1, "hour": 14, "force_risk": 14},
+    {"amount": 79900, "product": "Water Bottle", "method": "upi", "city_tier": 1, "hour": 10, "force_risk": 10},
+    {"amount": 24900, "product": "Stationery Pack", "method": "card", "city_tier": 1, "hour": 16, "force_risk": 15},
+    {"amount": 159900, "product": "Desk Organizer", "method": "upi", "city_tier": 1, "hour": 12, "force_risk": 11},
+    {"amount": 99900, "product": "Phone Stand", "method": "upi", "city_tier": 1, "hour": 13, "force_risk": 13},
+    {"amount": 34900, "product": "Socks Pack", "method": "card", "city_tier": 1, "hour": 15, "force_risk": 9},
+    {"amount": 59900, "product": "Mouse Pad", "method": "upi", "city_tier": 1, "hour": 17, "force_risk": 16},
+    # False positives — high risk, never disputed
+    {"amount": 620000, "product": "Designer Bag", "method": "card", "city_tier": 3, "hour": 1, "force_risk": 72, "metric_role": "fp", "orders_last_24h": 3},
+    {"amount": 510000, "product": "Premium Sneakers", "method": "card", "city_tier": 3, "hour": 2, "force_risk": 68, "metric_role": "fp", "orders_last_24h": 2},
+    # Extra clean UPI
+    {"amount": 89000, "product": "Power Bank", "method": "upi", "city_tier": 1, "hour": 11, "force_risk": 18, "vpa": "shopper@oksbi"},
+    {"amount": 45000, "product": "Cable Pack", "method": "upi", "city_tier": 1, "hour": 12, "force_risk": 8, "vpa": "payee@ibl"},
 ]
 
 CUSTOMERS: list[tuple[str, str, str]] = [
@@ -58,9 +75,12 @@ CUSTOMERS: list[tuple[str, str, str]] = [
     ("Amit Joshi", "amit.joshi@example.com", "+913333222111"),
     ("Pooja Gupta", "pooja.gupta@example.com", "+912222111000"),
     ("Rohan Desai", "rohan.desai@example.com", "+911234567890"),
+    ("Kabir Khan", "kabir.k@example.com", "+919811122233"),
+    ("Tara Sen", "tara.sen@example.com", "+919822233344"),
+    ("Yash Mehta", "yash.m@example.com", "+919833344455"),
 ]
 
-HEALTHY_CUSTOMERS: list[tuple[str, str, str]] = [
+CLEAN_CUSTOMERS: list[tuple[str, str, str]] = [
     ("Neha Kapoor", "neha.kapoor@example.com", "+919700000001"),
     ("Siddharth Rao", "sid.rao@example.com", "+919700000002"),
     ("Isha Banerjee", "isha.b@example.com", "+919700000003"),
@@ -69,6 +89,10 @@ HEALTHY_CUSTOMERS: list[tuple[str, str, str]] = [
     ("Dev Patel", "dev.patel@example.com", "+919700000006"),
     ("Riya Shah", "riya.shah@example.com", "+919700000007"),
     ("Nikhil Jain", "nikhil.j@example.com", "+919700000008"),
+    ("Asha Reddy", "asha.r@example.com", "+919700000009"),
+    ("Vivek Nair", "vivek.n@example.com", "+919700000010"),
+    ("Mira Das", "mira.das@example.com", "+919700000011"),
+    ("Omar Sheikh", "omar.s@example.com", "+919700000012"),
 ]
 
 _ADDRESSES = {
@@ -79,15 +103,29 @@ _ADDRESSES = {
 
 _shipping = MockShippingProvider()
 
+# Back-compat aliases used by older imports/tests
+TEST_SCENARIOS = CARD_DISPUTES + UPI_DISPUTES
+HEALTHY_TXNS = CLEAN_TXNS
+
+
+def _upi_fields(index: int, scenario: dict) -> dict:
+    if (scenario.get("method") or "card").lower() != "upi":
+        return {}
+    vpa = scenario.get("vpa") or _VPAS[index % len(_VPAS)]
+    return {
+        "vpa": vpa,
+        "upi_transaction_id": f"{(index + 1) * 111_222_333_444 % 10**12:012d}",
+        "bank_reference": f"UPI{(index + 37) * 7919 % 10**9:09X}"[:9],
+    }
+
 
 def _payment_entity(index: int, order_id: str, created_at: int, scenario: dict, customer: tuple) -> dict:
     name, email, contact = customer
     hour = int(scenario.get("hour") or 12)
-    # Align unix created_at hour approximately for risk scorer
     base = datetime.fromtimestamp(created_at, tz=timezone.utc).replace(
         hour=hour % 24, minute=0, second=0, microsecond=0
     )
-    return {
+    payment = {
         "id": f"pay_simulated_{index + 1}",
         "amount": scenario["amount"],
         "currency": "INR",
@@ -106,17 +144,110 @@ def _payment_entity(index: int, order_id: str, created_at: int, scenario: dict, 
             "demo_triage": scenario.get("demo_triage"),
         },
     }
+    payment.update(_upi_fields(index, scenario))
+    return payment
 
 
-async def _upsert_risk(
+def _build_vault(index: int, shipping, disputed: bool, order_day: datetime) -> tuple[list[str], list[dict]]:
+    signed = _SIGNED[index % len(_SIGNED)]
+    carrier = shipping.carrier if shipping else "Delhivery"
+    tracking = shipping.tracking_id if shipping else f"TRK{index:08d}"
+    delivered = shipping and shipping.status == "delivered"
+    fields = ["billing_proof", "access_activity_log"]
+    timeline = [
+        {
+            "day": 0,
+            "at": (order_day).isoformat(),
+            "text": "Day 0 — Order placed. Checkout metadata stored.",
+            "ok": True,
+        },
+        {
+            "day": 1,
+            "at": (order_day + timedelta(days=1)).isoformat(),
+            "text": f"Day 1 — Shipped via {carrier}. Tracking {tracking} registered.",
+            "ok": True,
+        },
+    ]
+    fields.append("shipping_proof")
+    if delivered:
+        fields.append("delivery_photo")
+        timeline.append(
+            {
+                "day": 3,
+                "at": (order_day + timedelta(days=3)).isoformat(),
+                "text": f"Day 3 — Delivered. Delivery photo captured. Signed by {signed}.",
+                "ok": True,
+            }
+        )
+    else:
+        timeline.append(
+            {
+                "day": 3,
+                "at": (order_day + timedelta(days=3)).isoformat(),
+                "text": "Day 3 — Delivery pending / RTO. Shipping proof incomplete.",
+                "ok": False,
+            }
+        )
+    fields.append("customer_communication")
+    timeline.append(
+        {
+            "day": 5,
+            "at": (order_day + timedelta(days=5)).isoformat(),
+            "text": "Day 5 — Follow-up email sent. Customer replied.",
+            "ok": True,
+        }
+    )
+    # unique preserve order
+    fields = list(dict.fromkeys(fields))
+    coverage = int(round(len(fields) / 5 * 100))
+    if disputed:
+        timeline.append(
+            {
+                "day": 8,
+                "at": (order_day + timedelta(days=8)).isoformat(),
+                "text": f"Day 8 — ⚠ DISPUTE FILED — Evidence vault {coverage}% complete",
+                "ok": False,
+                "warn": True,
+            }
+        )
+    else:
+        timeline.append(
+            {
+                "day": 8,
+                "at": (order_day + timedelta(days=8)).isoformat(),
+                "text": "No dispute filed — transaction clean",
+                "ok": True,
+            }
+        )
+    return fields, timeline
+
+
+def _level(score: float) -> str:
+    if score >= 75:
+        return "critical"
+    if score >= 50:
+        return "high"
+    if score >= 25:
+        return "medium"
+    return "low"
+
+
+async def _save_risk(
     payment: dict,
-    order: dict,
     shipping,
     known_emails: set[str],
-) -> None:
+    force_risk: float | None,
+    disputed: bool,
+    order_day: datetime,
+    index: int,
+) -> bool:
     assessment = await score_transaction_risk(
-        payment, order, shipping, known_emails=known_emails, use_llm=False
+        payment, {"id": payment.get("order_id")}, shipping, known_emails=known_emails, use_llm=False
     )
+    score = float(force_risk) if force_risk is not None else assessment.risk_score
+    if force_risk is None and disputed and score < 50:
+        score = min(95.0, max(55.0, score + 35))
+    fields, timeline = _build_vault(index, shipping, disputed, order_day)
     async with AsyncSessionLocal() as session:
         existing = (
             await session.execute(
@@ -124,26 +255,32 @@ async def _upsert_risk(
             )
         ).scalar_one_or_none()
         if existing is not None:
-            return
+            return False
         session.add(
             TransactionRisk(
                 payment_id=payment["id"],
                 order_id=payment.get("order_id"),
                 amount_paise=int(payment["amount"]),
-                risk_score=assessment.risk_score,
-                risk_level=assessment.risk_level,
+                payment_method=str(payment.get("method") or "card"),
+                risk_score=score,
+                risk_level=_level(score),
                 risk_factors_json=json.dumps([f.__dict__ for f in assessment.risk_factors]),
                 recommended_actions_json=json.dumps(assessment.recommended_actions),
                 predicted_dispute_type=assessment.predicted_dispute_type,
-                alert_status="active",
+                alert_status="dispute_filed" if disputed else "active",
+                vault_fields_json=json.dumps(fields),
+                vault_timeline_json=json.dumps(timeline),
+                payment_data_json=json.dumps(payment),
             )
         )
         await session.commit()
+    return True
 
 
 async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) -> dict:
     now = datetime.now(timezone.utc)
     created_at = int(now.timestamp())
+    order_day = now - timedelta(days=8)
     created = 0
     skipped = 0
     risks_created = 0
@@ -151,79 +288,54 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
     to_process: list[str] = []
     known_emails: set[str] = set()
 
-    # --- Healthy transactions (risk only) ---
-    for i, scenario in enumerate(HEALTHY_TXNS):
-        idx = 12 + i  # pay_simulated_13..20
+    dispute_scenarios = CARD_DISPUTES + UPI_DISPUTES
+
+    # Clean first so known_emails reflects established customers for some scores
+    for i, scenario in enumerate(CLEAN_TXNS):
+        idx = len(dispute_scenarios) + i
         order_id = f"order_simulated_{idx + 1}"
-        payment = _payment_entity(idx, order_id, created_at, scenario, HEALTHY_CUSTOMERS[i])
-        known_emails.add(payment["email"].lower())
+        cust = CLEAN_CUSTOMERS[i % len(CLEAN_CUSTOMERS)]
+        payment = _payment_entity(idx, order_id, created_at, scenario, cust)
         try:
             shipping = await _shipping.get_delivery_status(order_id)
-            before = risks_created
-            async with AsyncSessionLocal() as session:
-                exists = (
-                    await session.execute(
-                        select(TransactionRisk).where(TransactionRisk.payment_id == payment["id"])
-                    )
-                ).scalar_one_or_none()
-            if exists is None:
-                await _upsert_risk(payment, {"id": order_id}, shipping, known_emails - {payment["email"].lower()})
+            made = await _save_risk(
+                payment,
+                shipping,
+                set(known_emails),
+                scenario.get("force_risk"),
+                disputed=False,
+                order_day=order_day,
+                index=idx,
+            )
+            if made:
                 risks_created += 1
-            # Force low score for healthy demo contrast
-            async with AsyncSessionLocal() as session:
-                row = (
-                    await session.execute(
-                        select(TransactionRisk).where(TransactionRisk.payment_id == payment["id"])
-                    )
-                ).scalar_one_or_none()
-                if row and row.risk_score > 24:
-                    row.risk_score = 12.0 + (i % 5)
-                    row.risk_level = "low"
-                    row.recommended_actions_json = json.dumps(["No action needed"])
-                    await session.commit()
-            if before == risks_created and exists is None:
-                pass
+            known_emails.add(payment["email"].lower())
         except Exception as exc:
-            errors.append(f"healthy_{idx + 1}: {exc}")
-            log.exception("seed.healthy_failed", index=idx)
+            errors.append(f"clean_{idx + 1}: {exc}")
+            log.exception("seed.clean_failed", index=idx)
 
-    # --- Dispute-bound transactions ---
-    for index, scenario in enumerate(TEST_SCENARIOS):
+    for index, scenario in enumerate(dispute_scenarios):
         dispute_id = f"disp_simulated_{index + 1}"
         order_id = f"order_simulated_{index + 1}"
-        payment = _payment_entity(index, order_id, created_at, scenario, CUSTOMERS[index])
+        cust = CUSTOMERS[index % len(CUSTOMERS)]
+        payment = _payment_entity(index, order_id, created_at, scenario, cust)
         email_l = payment["email"].lower()
-        is_new = email_l not in known_emails
-        known_for_score = set(known_emails)
+        known_for = set(known_emails)
         known_emails.add(email_l)
         respond_by = unix_to_naive(int((now + timedelta(days=7 + (index % 8))).timestamp()))
         try:
             shipping = await _shipping.get_delivery_status(order_id)
-            async with AsyncSessionLocal() as session:
-                risk_exists = (
-                    await session.execute(
-                        select(TransactionRisk).where(TransactionRisk.payment_id == payment["id"])
-                    )
-                ).scalar_one_or_none()
-            if risk_exists is None:
-                await _upsert_risk(
-                    payment,
-                    {"id": order_id},
-                    shipping,
-                    known_for_score if not is_new else set(),
-                )
+            made = await _save_risk(
+                payment,
+                shipping,
+                known_for,
+                scenario.get("force_risk"),
+                disputed=True,
+                order_day=order_day,
+                index=index,
+            )
+            if made:
                 risks_created += 1
-            # Boost dispute-bound risk scores so alerts → disputes look accurate
-            async with AsyncSessionLocal() as session:
-                row = (
-                    await session.execute(
-                        select(TransactionRisk).where(TransactionRisk.payment_id == payment["id"])
-                    )
-                ).scalar_one_or_none()
-                if row and row.risk_score < 50:
-                    row.risk_score = min(95.0, max(55.0, row.risk_score + 35))
-                    row.risk_level = "critical" if row.risk_score >= 75 else "high"
-                    await session.commit()
 
             async with AsyncSessionLocal() as session:
                 existing = await session.get(Dispute, dispute_id)
@@ -254,7 +366,7 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
                 await session.commit()
             created += 1
             to_process.append(dispute_id)
-            log.info("seed.dispute_created", dispute_id=dispute_id)
+            log.info("seed.dispute_created", dispute_id=dispute_id, reason=scenario["reason"])
         except Exception as exc:
             errors.append(f"{dispute_id}: {exc}")
             log.exception("seed.dispute_failed", index=index)
@@ -269,8 +381,8 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
         "created": created,
         "skipped": skipped,
         "risks_created": risks_created,
-        "total_disputes": len(TEST_SCENARIOS),
-        "total_transactions": len(TEST_SCENARIOS) + len(HEALTHY_TXNS),
+        "total_disputes": len(dispute_scenarios),
+        "total_transactions": len(dispute_scenarios) + len(CLEAN_TXNS),
         "errors": errors,
     }
 

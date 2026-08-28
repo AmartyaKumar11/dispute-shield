@@ -52,6 +52,7 @@ USER_PROMPT_TEMPLATE = """Write an explanation letter to contest this chargeback
 - Payment Date: {payment_date}
 - Customer Email: {customer_email}
 - Customer Contact: {customer_contact}
+{upi_section}
 
 ## Order Information
 - Order ID: {order_id}
@@ -212,6 +213,17 @@ def _build_user_prompt(
     else:
         comms_section = "No customer communication records available."
 
+    method = (payment_data.get("method") or "card").lower()
+    if method == "upi":
+        upi_section = (
+            f"- VPA: {payment_data.get('vpa') or 'n/a'}\n"
+            f"- UPI Transaction ID: {payment_data.get('upi_transaction_id') or 'n/a'}\n"
+            f"- Bank Reference: {payment_data.get('bank_reference') or 'n/a'}\n"
+            "- Note: Reference the VPA and UPI transaction ID explicitly in the letter."
+        )
+    else:
+        upi_section = ""
+
     strengths = weaknesses = recommendations = "None provided."
     if evidence_analysis is not None:
         strengths = "\n".join(f"- {s}" for s in getattr(evidence_analysis, "strengths", []) or []) or "None"
@@ -233,6 +245,7 @@ def _build_user_prompt(
         payment_date=payment_data.get("created_at") or "",
         customer_email=payment_data.get("email") or "",
         customer_contact=payment_data.get("contact") or "",
+        upi_section=upi_section,
         order_id=order_data.get("id") or payment_data.get("order_id") or "",
         order_items=order_items,
         order_date=order_data.get("created_at") or "",
@@ -269,12 +282,21 @@ def _fallback_letter(
             f"delivered to {shipping_info.delivery_address}."
         )
     )
+    upi_line = ""
+    if (payment_data.get("method") or "").lower() == "upi":
+        upi_line = (
+            f"This was a UPI payment from VPA {payment_data.get('vpa') or 'n/a'} with UPI "
+            f"transaction ID {payment_data.get('upi_transaction_id') or 'n/a'} and bank "
+            f"reference {payment_data.get('bank_reference') or 'n/a'}. UPI PIN authorization "
+            "on the customer's device confirms active approval of the payment.\n\n"
+        )
     return (
         "Dear Dispute Resolution Team,\n\n"
         f"We write to contest the {reason_code} dispute raised against payment {payment_id} "
         f"for order {order_id}, amounting to Rs.{amount:.2f}. The transaction was authorised "
         f"by {email} using the payment method on file, and the corresponding order was created "
         "in the ordinary course of our e-commerce operations.\n\n"
+        f"{upi_line}"
         f"{letter_focus}\n\n"
         f"{shipping_line}\n\n"
         "Billing proof generated from Razorpay payment records is enclosed. Where customer "

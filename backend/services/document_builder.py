@@ -65,6 +65,10 @@ def build_billing_proof(dispute_id: str, payment_data: dict, order_data: dict) -
     pdf.line_item("Amount (INR)", f"Rs.{int(amount) / 100:.2f}")
     pdf.line_item("Currency", payment_data.get("currency") or "INR")
     pdf.line_item("Method", payment_data.get("method"))
+    if (payment_data.get("method") or "").lower() == "upi":
+        pdf.line_item("VPA", payment_data.get("vpa"))
+        pdf.line_item("UPI Transaction ID", payment_data.get("upi_transaction_id"))
+        pdf.line_item("Bank Reference", payment_data.get("bank_reference"))
     pdf.line_item("Customer email", payment_data.get("email"))
     pdf.line_item("Customer contact", payment_data.get("contact"))
     pdf.line_item("Product", notes.get("product") or order_notes.get("product"))

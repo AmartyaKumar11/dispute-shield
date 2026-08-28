@@ -68,4 +68,9 @@ export async function getIntelligence() {
   return data
 }
 
+export async function getEvaluation() {
+  const { data } = await api.get('/api/evaluation/report')
+  return data
+}
+
 export default api

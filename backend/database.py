@@ -35,6 +35,12 @@ def _sqlite_add_missing_columns(sync_conn) -> None:
             "triage_action": "VARCHAR",
             "review_reason": "TEXT",
         },
+        "transaction_risks": {
+            "payment_method": "VARCHAR",
+            "vault_fields_json": "TEXT",
+            "vault_timeline_json": "TEXT",
+            "payment_data_json": "TEXT",
+        },
     }
     for table, cols in defs.items():
         existing = {
