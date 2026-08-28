@@ -1,0 +1,144 @@
+# Project: DisputeShield — Razorpay Chargeback Evidence Auto-Assembler
+# Razorpay AI Buildathon 2026 — Track 02: AI Risk Manager
+
+## Project Overview
+An AI-powered agent that listens for Razorpay dispute webhooks, automatically
+assembles the optimal evidence package based on the chargeback reason code,
+generates an LLM-powered explanation letter, and submits the contest via
+Razorpay's Dispute API — all without merchant intervention.
+
+## Tech Stack (STRICT — do not deviate)
+- **Backend**: Python 3.11+, FastAPI, uvicorn
+- **Frontend**: React 18 + Vite, TailwindCSS
+- **LLM**: Kimi API via NVIDIA NIM inference endpoint
+- **Payment Gateway**: Razorpay Python SDK (`razorpay` package) — TEST MODE ONLY
+- **PDF Generation**: `fpdf2` (for generating evidence documents)
+- **HTTP Client**: `httpx` (async)
+- **Database**: SQLite via `aiosqlite` + `SQLAlchemy` async (lightweight, no setup)
+- **Task Queue**: None — use FastAPI BackgroundTasks (keep it simple)
+
+## Architecture Rules
+1. Read ARCHITECTURE.md before writing ANY code. It is the source of truth.
+2. Read TASKS.md for the current task. Complete tasks IN ORDER.
+3. This is a LINEAR PIPELINE, not a multi-agent system. No LangChain, no
+   CrewAI, no agent frameworks. The only LLM call is for explanation letter
+   generation.
+4. Every external service interaction goes through a Provider interface.
+   Real providers hit real APIs. Mock providers return realistic fake data.
+   Both implement the same interface.
+
+## File Structure (MUST follow exactly)
+```
+disputeshield/
+├── backend/
+│   ├── main.py                    # FastAPI app entry point
+│   ├── config.py                  # Settings, env vars, API keys
+│   ├── models.py                  # SQLAlchemy models + Pydantic schemas
+│   ├── database.py                # DB engine, session factory
+│   ├── routers/
+│   │   ├── webhooks.py            # POST /webhooks/razorpay
+│   │   ├── disputes.py            # GET /disputes, GET /disputes/{id}
+│   │   └── metrics.py             # GET /metrics/summary
+│   ├── services/
+│   │   ├── dispute_service.py     # Core orchestration pipeline
+│   │   ├── evidence_strategy.py   # Reason code → evidence strategy mapper
+│   │   ├── explanation_generator.py  # LLM call for explanation letter
+│   │   └── document_builder.py    # PDF generation for evidence docs
+│   ├── providers/
+│   │   ├── base.py                # Abstract base classes (interfaces)
+│   │   ├── razorpay_provider.py   # Real Razorpay API calls
+│   │   ├── shipping_provider.py   # Mock shipping/delivery data
+│   │   ├── comms_provider.py      # Mock customer communication data
+│   │   └── llm_provider.py        # Kimi API via NVIDIA NIM
+│   ├── utils/
+│   │   ├── webhook_validator.py   # Razorpay webhook signature verification
+│   │   └── helpers.py             # Date formatting, amount conversion, etc.
+│   └── seed/
+│       └── seed_disputes.py       # Script to create test payments + disputes
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── pages/
+│   │   │   └── Dashboard.jsx      # Main dashboard page
+│   │   ├── components/
+│   │   │   ├── DisputeList.jsx    # List of all disputes with status
+│   │   │   ├── DisputeDetail.jsx  # Single dispute deep-dive
+│   │   │   ├── EvidenceTimeline.jsx  # Step-by-step evidence assembly view
+│   │   │   ├── ExplanationPreview.jsx # Generated letter with edit option
+│   │   │   ├── MetricsSummary.jsx # Batch metrics overview
+│   │   │   └── StatusBadge.jsx    # Reusable status indicator
+│   │   ├── hooks/
+│   │   │   └── useDisputes.js     # Data fetching hook
+│   │   └── lib/
+│   │       └── api.js             # Axios instance + API calls
+│   ├── index.html
+│   ├── tailwind.config.js
+│   ├── vite.config.js
+│   └── package.json
+├── .env.example
+├── requirements.txt
+├── ARCHITECTURE.md
+├── TASKS.md
+└── README.md
+```
+
+## Coding Standards
+
+### Python (Backend)
+- Use `async def` for all route handlers and service functions
+- Type hints on ALL function signatures — no exceptions
+- Pydantic models for ALL API request/response schemas
+- Use `from __future__ import annotations` in every file
+- Error handling: catch specific exceptions, log them, return structured error responses
+- Logging: use `structlog` or stdlib `logging` — log every pipeline step
+- Never hardcode API keys — always from `config.py` which reads `.env`
+- Amount handling: Razorpay uses PAISE (integer). Always convert:
+  `amount_rupees = amount_paise / 100`
+
+### React (Frontend)
+- Functional components only, hooks for state
+- TailwindCSS for all styling — no CSS files
+- Use a clean, professional color scheme: slate grays + blue accent
+- Loading states on every data fetch
+- Error states with clear messages
+- Responsive but desktop-first (judges will see it on a laptop)
+
+### General
+- No comments explaining obvious code. Comments only for WHY, not WHAT.
+- No placeholder/TODO code. Every function must be fully implemented.
+- No print statements — use proper logging.
+- Git commits after each completed task with descriptive messages.
+
+## Razorpay API Notes (CRITICAL)
+- ALWAYS use test mode API keys (start with `rzp_test_`)
+- Razorpay amounts are in PAISE (₹100 = 10000 paise)
+- Dispute Contest API: `PATCH /v1/disputes/{id}` with evidence fields + `action: "submit"`
+- Document Upload API: `POST /v1/documents` with `purpose: "dispute_evidence"`
+- Webhook event for disputes: `payment.dispute.created`
+- Dispute evidence fields: shipping_proof, billing_proof, customer_communication,
+  proof_of_service, explanation_letter, refund_confirmation, access_activity_log,
+  refund_cancellation_policy, term_and_conditions, others
+- Each evidence field takes an array of document IDs (from Document Upload API)
+- `summary` field: max 1000 characters, text explanation
+- Contest can be partial (specify `amount`) or full (omit `amount`)
+
+## LLM Integration Notes
+- Kimi API via NVIDIA NIM inference endpoint
+- Endpoint URL and API key from environment variables
+- Model: configure via env var (default to whatever Kimi model is available on NIM)
+- The ONLY LLM call in the entire system is `generate_explanation_letter()`
+- Prompt must include: reason code, payment details, order details, shipping status,
+  refund status — structured as context, then instruction
+- Output: a formal, professional explanation letter (500-800 words)
+- Temperature: 0.3 (we want consistent, professional output, not creative)
+- Include a system prompt that sets the role as a dispute resolution specialist
+
+## What NOT to Build
+- No authentication/login system
+- No user management
+- No payment processing (we only READ payment data)
+- No real-time WebSocket updates (polling is fine for a hackathon)
+- No mobile responsiveness (desktop-first)
+- No unit tests (time constraint — focus on working demo)
+- No Docker/containerization (localhost is fine)
+- No multi-agent/LangChain/CrewAI — this is a simple pipeline

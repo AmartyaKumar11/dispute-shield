@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.config import settings
+from backend.database import init_db
+from backend.routers import disputes, metrics, webhooks
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await init_db()
+    yield
+
+
+app = FastAPI(title="DisputeShield", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_url, "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(webhooks.router)
+app.include_router(disputes.router)
+app.include_router(metrics.router)
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "OK"}
+
+
+@app.post("/api/seed/create-test-disputes")
+async def create_test_disputes() -> dict:
+    from backend.seed.seed_disputes import seed_test_disputes
+
+    return await seed_test_disputes()
