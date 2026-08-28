@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base
@@ -32,6 +32,9 @@ class Dispute(Base):
 
     explanation_letter: Mapped[str | None] = mapped_column(Text, nullable=True)
     evidence_strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_analysis_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    win_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    win_probability_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     documents_uploaded: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -59,6 +62,14 @@ class Dispute(Base):
             if start:
                 processing_time = (self.processing_completed_at - start).total_seconds()
 
+        analysis: dict | None = None
+        if self.evidence_analysis_json:
+            try:
+                parsed_a = json.loads(self.evidence_analysis_json)
+                analysis = parsed_a if isinstance(parsed_a, dict) else None
+            except json.JSONDecodeError:
+                analysis = None
+
         return DisputeResponse(
             id=self.id,
             payment_id=self.payment_id,
@@ -71,6 +82,9 @@ class Dispute(Base):
             respond_by=self.respond_by,
             explanation_letter=self.explanation_letter,
             evidence_strategy=strategy,
+            evidence_analysis=analysis,
+            win_probability=self.win_probability,
+            win_probability_reasoning=self.win_probability_reasoning,
             processing_time_seconds=processing_time,
             error_message=self.error_message,
             created_at=self.created_at,
@@ -89,6 +103,9 @@ class DisputeResponse(BaseModel):
     respond_by: datetime
     explanation_letter: str | None
     evidence_strategy: dict | None
+    evidence_analysis: dict | None = None
+    win_probability: float | None = None
+    win_probability_reasoning: str | None = None
     processing_time_seconds: float | None
     error_message: str | None
     created_at: datetime

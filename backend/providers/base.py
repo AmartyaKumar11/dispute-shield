@@ -67,6 +67,7 @@ class LLMProvider(ABC):
         shipping_info: ShippingInfo | None,
         refund_data: list[dict],
         comms_data: list[EmailRecord],
+        evidence_analysis: object | None = None,
     ) -> tuple[str, bool]:
         """Return (letter_text, used_fallback)."""
         ...

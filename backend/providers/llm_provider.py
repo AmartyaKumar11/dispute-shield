@@ -73,8 +73,19 @@ USER_PROMPT_TEMPLATE = """Write an explanation letter to contest this chargeback
 ## Evidence Gaps
 {evidence_gaps}
 
+## AI Evidence Analysis (use this to sharpen the letter)
+### Strengths — emphasize these
+{analysis_strengths}
+
+### Weaknesses — preemptively address these
+{analysis_weaknesses}
+
+### Specific recommendations — incorporate these points
+{analysis_recommendations}
+
 Write the explanation letter now. Address the specific reason for the dispute
-and reference the concrete evidence provided above."""
+and reference the concrete evidence provided above. Explicitly leverage the
+strengths, address the weaknesses, and weave in the recommendations."""
 
 
 def _model_name() -> str:
@@ -92,6 +103,7 @@ class KimiLLMProvider(LLMProvider):
         shipping_info: ShippingInfo | None,
         refund_data: list[dict],
         comms_data: list[EmailRecord],
+        evidence_analysis: object | None = None,
     ) -> tuple[str, bool]:
         user_prompt = _build_user_prompt(
             reason_code,
@@ -101,6 +113,7 @@ class KimiLLMProvider(LLMProvider):
             shipping_info,
             refund_data,
             comms_data,
+            evidence_analysis,
         )
         url = settings.llm_api_base_url.rstrip("/") + "/chat/completions"
         models = [_model_name()]
@@ -159,6 +172,7 @@ def _build_user_prompt(
     shipping_info: ShippingInfo | None,
     refund_data: list[dict],
     comms_data: list[EmailRecord],
+    evidence_analysis: object | None = None,
 ) -> str:
     meta = payment_data.get("_meta") or {}
     amount_paise = payment_data.get("amount") or meta.get("amount_paise") or 0
@@ -198,6 +212,15 @@ def _build_user_prompt(
     else:
         comms_section = "No customer communication records available."
 
+    strengths = weaknesses = recommendations = "None provided."
+    if evidence_analysis is not None:
+        strengths = "\n".join(f"- {s}" for s in getattr(evidence_analysis, "strengths", []) or []) or "None"
+        weaknesses = "\n".join(f"- {s}" for s in getattr(evidence_analysis, "weaknesses", []) or []) or "None"
+        recommendations = (
+            "\n".join(f"- {s}" for s in getattr(evidence_analysis, "letter_recommendations", []) or [])
+            or "None"
+        )
+
     return USER_PROMPT_TEMPLATE.format(
         reason_code=reason_code,
         phase=meta.get("phase") or "chargeback",
@@ -218,6 +241,9 @@ def _build_user_prompt(
         comms_section=comms_section,
         letter_focus=letter_focus,
         evidence_gaps=gaps,
+        analysis_strengths=strengths,
+        analysis_weaknesses=weaknesses,
+        analysis_recommendations=recommendations,
     )
 
 

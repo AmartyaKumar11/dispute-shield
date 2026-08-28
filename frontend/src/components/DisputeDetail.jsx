@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Loader2, Minus, RefreshCw } from 'lucide-react'
 import { getDispute, retryDispute } from '../lib/api'
 import { evidenceChecklist, formatDate, formatRupees, TERMINAL } from '../lib/format'
 import EvidenceTimeline from './EvidenceTimeline'
+import AIReasoning from './AIReasoning'
 import StatusBadge from './StatusBadge'
 
 function prettyField(name) {
@@ -118,6 +119,8 @@ export default function DisputeDetail({ disputeId, onRetried }) {
           />
         </div>
       </section>
+
+      <AIReasoning dispute={dispute} />
 
       <section>
         <p className="eyebrow mb-3">Evidence collected</p>

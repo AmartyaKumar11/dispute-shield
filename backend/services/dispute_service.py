@@ -14,6 +14,10 @@ from backend.providers.llm_provider import KimiLLMProvider
 from backend.providers.razorpay_provider import RazorpayProvider
 from backend.providers.shipping_provider import MockShippingProvider
 from backend.services import document_builder
+from backend.services.evidence_analyzer import (
+    analyze_evidence_strength,
+    predict_win_probability,
+)
 from backend.services.evidence_strategy import (
     evaluate_evidence_coverage,
     get_strategy,
@@ -122,6 +126,41 @@ async def _run(dispute_id: str) -> None:
             dispute.status = "assembled"
             await session.commit()
 
+            provisional = _provisional_gathered(strategy, gaps, shipping, comms)
+            coverage = evaluate_evidence_coverage(strategy, provisional)
+            analysis = await analyze_evidence_strength(
+                dispute.reason_code,
+                payment,
+                order,
+                shipping,
+                comms,
+                refunds,
+                gaps,
+                coverage,
+            )
+            win = await predict_win_probability(
+                dispute.reason_code,
+                analysis,
+                coverage,
+                gaps,
+                shipping_info=shipping,
+                has_billing=True,
+                has_comms=bool(comms),
+                has_refund=bool(refunds),
+                has_access_log="access_activity_log" in provisional,
+            )
+            dispute.evidence_analysis_json = json.dumps(analysis.to_dict())
+            dispute.win_probability = win.win_probability
+            dispute.win_probability_reasoning = win.reasoning
+            await session.commit()
+            log.info(
+                "pipeline.evidence_analyzed",
+                dispute_id=dispute_id,
+                strength=analysis.overall_strength,
+                win=win.win_probability,
+                analysis_fallback=analysis.used_fallback,
+            )
+
             letter_focus = strategy.letter_focus
             if "shipping_proof" in gaps:
                 letter_focus = f"{letter_focus} {_GAP_FOCUS}"
@@ -133,6 +172,7 @@ async def _run(dispute_id: str) -> None:
                 shipping,
                 refunds,
                 comms,
+                analysis,
             )
             dispute.explanation_letter = letter
 
@@ -300,3 +340,25 @@ async def _contest(dispute_id: str, evidence: dict, simulate: bool) -> dict:
         if _is_auth_error(exc):
             raise RuntimeError(_AUTH_MSG) from exc
         raise RuntimeError(f"Contest submission failed: {exc}") from exc
+
+
+def _provisional_gathered(strategy, gaps: list[str], shipping, comms) -> set[str]:
+    """Estimate evidence fields we will attach before PDF/upload (for analysis)."""
+    gathered = {
+        "billing_proof",
+        "explanation_letter",
+        "proof_of_service",
+        "term_and_conditions",
+        "refund_confirmation",
+        "refund_cancellation_policy",
+    }
+    if "shipping_proof" not in gaps and shipping is not None:
+        gathered.add("shipping_proof")
+    if comms:
+        gathered.add("customer_communication")
+    if (
+        "access_activity_log" in strategy.required_evidence
+        or "access_activity_log" in strategy.recommended_evidence
+    ):
+        gathered.add("access_activity_log")
+    return gathered
