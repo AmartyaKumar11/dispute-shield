@@ -199,24 +199,35 @@ async def score_transaction_risk(
         payment_data, order_data, shipping_info, known_emails
     )
 
-    # Blend: 60% trained ML + 40% India-specific rules
-    final = int(round(ml_score * 0.6 + min(rule_score, 100.0) * 0.4))
+    # Trust ML more when held-out precision is solid
+    model_precision = float(ml_result.get("model_precision") or 0)
+    if model_precision >= 0.5:
+        ml_weight, rule_weight = 0.6, 0.4
+    else:
+        ml_weight, rule_weight = 0.3, 0.7
+
+    final = int(round(ml_score * ml_weight + min(rule_score, 100.0) * rule_weight))
     final = max(0, min(100, final))
     level = _level(float(final))
 
     prec = ml_result.get("model_precision")
     rec = ml_result.get("model_recall")
+    thr = ml_result.get("threshold", 0.5)
+    train_n = ml_result.get("training_data_size", "N/A")
     prec_s = f"{float(prec):.3f}" if isinstance(prec, (int, float)) else "N/A"
     rec_s = f"{float(rec):.3f}" if isinstance(rec, (int, float)) else "N/A"
+    thr_s = f"{float(thr):.3f}" if isinstance(thr, (int, float)) else "N/A"
     factors.insert(
         0,
         RiskFactor(
             factor="ml_model_prediction",
             signal=(
                 f"{ml_result.get('model')} predicted {float(ml_result.get('probability') or 0):.1%} "
-                f"dispute probability (P={prec_s}, R={rec_s})"
+                f"dispute probability "
+                f"(P={prec_s}, R={rec_s}, threshold={thr_s}, "
+                f"trained on {train_n} transactions)"
             ),
-            weight=round(ml_score * 0.6, 1),
+            weight=round(ml_score * ml_weight, 1),
         ),
     )
 

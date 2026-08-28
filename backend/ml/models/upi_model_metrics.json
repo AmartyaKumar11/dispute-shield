@@ -1,36 +1,106 @@
 {
-  "precision": 0.9995294117647059,
-  "recall": 0.9995294117647059,
-  "f1": 0.9995294117647059,
+  "precision": 0.7028278485199272,
+  "recall": 1.0,
+  "f1": 0.8254831504321647,
   "confusion_matrix": [
     [
-      1244484,
-      2
+      1242689,
+      1797
     ],
     [
-      2,
-      4248
+      0,
+      4250
     ]
   ],
+  "optimal_threshold": 0.02808767929673195,
+  "default_threshold_metrics": {
+    "precision": 1.0,
+    "recall": 0.9995294117647059,
+    "f1": 0.9997646505060014
+  },
   "test_size": 1248736,
-  "train_size": 1000000,
-  "fraud_rate_train": 0.003963,
+  "train_size": 1500000,
+  "fraud_rate_train": 0.002642,
   "fraud_rate_test": 0.0034034415601055788,
-  "dataset": "PaySim Synthetic Mobile Money",
+  "num_features": 19,
+  "dataset": "PaySim Mobile Money (6.3M transactions)",
   "dataset_size": 6362620,
-  "features": [
-    "step",
-    "type_encoded",
-    "amount",
-    "oldbalanceOrg",
-    "newbalanceOrig",
-    "oldbalanceDest",
-    "newbalanceDest",
-    "amount_ratio_orig",
-    "balance_change_orig",
-    "balance_change_dest",
-    "is_dest_merchant",
-    "balance_error_orig",
-    "balance_error_dest"
+  "top_features": [
+    {
+      "name": "balance_change_orig",
+      "importance": 0.4615093469619751
+    },
+    {
+      "name": "amount_gt_balance",
+      "importance": 0.20569469034671783
+    },
+    {
+      "name": "drains_account",
+      "importance": 0.1020071730017662
+    },
+    {
+      "name": "newbalanceOrig",
+      "importance": 0.0977582111954689
+    },
+    {
+      "name": "is_risky_type",
+      "importance": 0.030996615067124367
+    },
+    {
+      "name": "is_night",
+      "importance": 0.02335476689040661
+    },
+    {
+      "name": "is_dest_merchant",
+      "importance": 0.021615400910377502
+    },
+    {
+      "name": "amount_ratio_orig",
+      "importance": 0.020530104637145996
+    },
+    {
+      "name": "hour_of_day",
+      "importance": 0.012647364288568497
+    },
+    {
+      "name": "type_encoded",
+      "importance": 0.009502707980573177
+    },
+    {
+      "name": "amount_log",
+      "importance": 0.005002524238079786
+    },
+    {
+      "name": "amount",
+      "importance": 0.004379339516162872
+    },
+    {
+      "name": "amount_vs_sender_avg",
+      "importance": 0.0018905235920101404
+    },
+    {
+      "name": "step",
+      "importance": 0.0018446887843310833
+    },
+    {
+      "name": "oldbalanceOrg",
+      "importance": 0.0010643639834597707
+    },
+    {
+      "name": "sender_txn_count",
+      "importance": 0.00020214554388076067
+    },
+    {
+      "name": "sender_cumulative_amount",
+      "importance": 0.0
+    },
+    {
+      "name": "sender_avg_amount",
+      "importance": 0.0
+    },
+    {
+      "name": "sender_unique_recipients",
+      "importance": 0.0
+    }
   ]
 }

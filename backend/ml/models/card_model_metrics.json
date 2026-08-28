@@ -1,42 +1,110 @@
 {
-  "precision": 0.19526013957023422,
-  "recall": 0.6953740157480315,
-  "f1": 0.3049037061013109,
+  "precision": 0.7001710863986313,
+  "recall": 0.4028051181102362,
+  "f1": 0.5114026866604187,
   "confusion_matrix": [
     [
-      102397,
-      11647
+      113343,
+      701
     ],
     [
-      1238,
-      2826
+      2427,
+      1637
     ]
   ],
+  "optimal_threshold": 0.8564593195915222,
+  "default_threshold_metrics": {
+    "precision": 0.2875259875259875,
+    "recall": 0.6806102362204725,
+    "f1": 0.4042677579655072
+  },
   "test_size": 118108,
   "train_size": 472432,
   "fraud_rate_train": 0.03513521522674162,
   "fraud_rate_test": 0.034409184813899145,
+  "num_features": 392,
   "dataset": "IEEE-CIS Fraud Detection",
   "dataset_size": 590540,
-  "features": [
-    "TransactionAmt",
-    "ProductCD",
-    "card4",
-    "card6",
-    "P_emaildomain",
-    "R_emaildomain",
-    "addr1",
-    "addr2",
-    "dist1",
-    "C1",
-    "C2",
-    "C5",
-    "C6",
-    "C13",
-    "C14",
-    "D1",
-    "D4",
-    "D10",
-    "D15"
+  "top_features": [
+    {
+      "name": "V258",
+      "importance": 0.14629976451396942
+    },
+    {
+      "name": "V70",
+      "importance": 0.060979604721069336
+    },
+    {
+      "name": "V91",
+      "importance": 0.035335686057806015
+    },
+    {
+      "name": "V294",
+      "importance": 0.024360591545701027
+    },
+    {
+      "name": "V264",
+      "importance": 0.024275556206703186
+    },
+    {
+      "name": "V201",
+      "importance": 0.02279006317257881
+    },
+    {
+      "name": "V317",
+      "importance": 0.021860307082533836
+    },
+    {
+      "name": "V257",
+      "importance": 0.019597938284277916
+    },
+    {
+      "name": "C8",
+      "importance": 0.015687687322497368
+    },
+    {
+      "name": "V162",
+      "importance": 0.01437847688794136
+    },
+    {
+      "name": "V308",
+      "importance": 0.010274802334606647
+    },
+    {
+      "name": "C14",
+      "importance": 0.010264536365866661
+    },
+    {
+      "name": "V187",
+      "importance": 0.00915855634957552
+    },
+    {
+      "name": "V318",
+      "importance": 0.008069577626883984
+    },
+    {
+      "name": "card6",
+      "importance": 0.00789579376578331
+    },
+    {
+      "name": "C4",
+      "importance": 0.007800611667335033
+    },
+    {
+      "name": "V158",
+      "importance": 0.007584463804960251
+    },
+    {
+      "name": "V140",
+      "importance": 0.007332326378673315
+    },
+    {
+      "name": "V90",
+      "importance": 0.0065346285700798035
+    },
+    {
+      "name": "V141",
+      "importance": 0.006221218500286341
+    }
   ]
 }

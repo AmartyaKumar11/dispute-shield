@@ -95,16 +95,18 @@ export default function IntelligencePanel({ refreshKey }) {
               <TrainingCard
                 title="Card model"
                 status={modelsInfo.card_model?.status}
-                dataset="Trained on IEEE-CIS: 590,540 real e-commerce transactions"
+                dataset={modelsInfo.card_model?.dataset}
                 metrics={modelsInfo.card_model?.metrics}
-                rateNote="3.5% chargeback rate"
+                threshold={modelsInfo.card_model?.threshold}
+                topFeatures={modelsInfo.card_model?.top_features}
               />
               <TrainingCard
                 title="UPI model"
                 status={modelsInfo.upi_model?.status}
-                dataset="Trained on PaySim: 6.3M synthetic mobile money transactions"
+                dataset={modelsInfo.upi_model?.dataset}
                 metrics={modelsInfo.upi_model?.metrics}
-                rateNote="0.13% fraud rate"
+                threshold={modelsInfo.upi_model?.threshold}
+                topFeatures={modelsInfo.upi_model?.top_features}
               />
             </div>
           ) : null}
@@ -303,8 +305,10 @@ function MatrixCell({ tone, label, value }) {
   )
 }
 
-function TrainingCard({ title, status, dataset, metrics, rateNote }) {
+function TrainingCard({ title, status, dataset, metrics, threshold, topFeatures }) {
   const m = metrics || {}
+  const feats = Array.isArray(topFeatures) ? topFeatures : []
+  const maxImp = Math.max(...feats.map((f) => Number(f.importance) || 0), 1e-9)
   return (
     <div className="elevated-card px-5 py-4">
       <div className="flex items-center justify-between gap-2">
@@ -321,14 +325,45 @@ function TrainingCard({ title, status, dataset, metrics, rateNote }) {
       </div>
       <p className="mt-2 text-[12px] leading-relaxed text-muted">{dataset}</p>
       {status === 'loaded' ? (
-        <p className="mt-2 font-mono text-[12px] text-ink">
-          Precision: {Number(m.precision || 0).toFixed(3)} | Recall:{' '}
-          {Number(m.recall || 0).toFixed(3)} | F1: {Number(m.f1 || 0).toFixed(3)}
-        </p>
+        <>
+          <p className="mt-2 text-[12px] text-muted">
+            Features used: <span className="font-mono text-ink">{m.num_features ?? '—'}</span>
+            {' · '}
+            Training data:{' '}
+            <span className="font-mono text-ink">
+              {Number(m.dataset_size || 0).toLocaleString()} transactions
+            </span>
+          </p>
+          <p className="mt-1 text-[12px] text-muted">
+            Deploy threshold:{' '}
+            <span className="font-mono text-ink">{Number(threshold ?? m.optimal_threshold ?? 0.5).toFixed(3)}</span>
+          </p>
+          <p className="mt-2 font-mono text-[12px] text-ink">
+            Precision: {Number(m.precision || 0).toFixed(3)} | Recall:{' '}
+            {Number(m.recall || 0).toFixed(3)} | F1: {Number(m.f1 || 0).toFixed(3)}
+          </p>
+          {feats.length > 0 ? (
+            <div className="mt-3 space-y-1.5">
+              <p className="text-[11px] uppercase tracking-[0.06em] text-label">Top features</p>
+              {feats.slice(0, 5).map((f) => {
+                const imp = Number(f.importance) || 0
+                const pct = Math.max(4, Math.round((imp / maxImp) * 100))
+                return (
+                  <div key={f.name} className="grid grid-cols-[110px_1fr_44px] items-center gap-2">
+                    <span className="truncate font-mono text-[10px] text-muted">{f.name}</span>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full bg-accent/80" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-right font-mono text-[10px] text-label">{imp.toFixed(3)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+        </>
       ) : (
         <p className="mt-2 text-[12px] text-[#FBBF24]">Model file not loaded — run train scripts.</p>
       )}
-      <p className="mt-1 text-[11px] text-label">{rateNote}</p>
     </div>
   )
 }
