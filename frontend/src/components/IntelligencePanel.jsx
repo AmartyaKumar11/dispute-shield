@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getEvaluation, getIntelligence, getModelsInfo } from '../lib/api'
+import { getEvaluation, getHealthScore, getIntelligence, getModelsInfo, getPortalMetrics } from '../lib/api'
 import { formatRupees } from '../lib/format'
 
 const PRIORITY = {
@@ -18,6 +18,8 @@ export default function IntelligencePanel({ refreshKey }) {
   const [data, setData] = useState(null)
   const [evalReport, setEvalReport] = useState(null)
   const [modelsInfo, setModelsInfo] = useState(null)
+  const [portalMetrics, setPortalMetrics] = useState(null)
+  const [healthScore, setHealthScore] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -26,15 +28,19 @@ export default function IntelligencePanel({ refreshKey }) {
     ;(async () => {
       try {
         setLoading(true)
-        const [insights, evaluation, models] = await Promise.all([
+        const [insights, evaluation, models, portal, health] = await Promise.all([
           getIntelligence(),
           getEvaluation(),
           getModelsInfo(),
+          getPortalMetrics().catch(() => null),
+          getHealthScore().catch(() => null),
         ])
         if (!alive) return
         setData(insights)
         setEvalReport(evaluation)
         setModelsInfo(models)
+        setPortalMetrics(portal)
+        setHealthScore(health)
         setError(null)
       } catch (err) {
         if (alive) setError(err.message || 'Failed to load insights')
@@ -66,6 +72,69 @@ export default function IntelligencePanel({ refreshKey }) {
 
   return (
     <div className="space-y-8">
+      {healthScore ? (
+        <section className="space-y-4">
+          <div>
+            <p className="eyebrow">Merchant health</p>
+            <h2 className="mt-1 text-[18px] font-medium">
+              Overall score{' '}
+              <span className={`font-mono ${metricTone((healthScore.overall_score || 0) / 100)}`}>
+                {Number(healthScore.overall_score).toFixed(1)}
+              </span>
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {(healthScore.components || []).map((c) => (
+              <div
+                key={c.id}
+                className="elevated-card flex items-center justify-between gap-3 px-4 py-3 text-[13px]"
+              >
+                <div>
+                  <p className="text-ink">{c.label}</p>
+                  <p className="text-[11px] text-muted">Weight {(c.weight * 100).toFixed(0)}%</p>
+                </div>
+                <p className={`font-mono text-[18px] font-semibold ${metricTone((c.score || 0) / 100)}`}>
+                  {Number(c.score).toFixed(0)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {portalMetrics ? (
+        <section className="space-y-4">
+          <div>
+            <p className="eyebrow">Customer self-service</p>
+            <h2 className="mt-1 text-[18px] font-medium">Resolution portal</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <MetricCard label="Visits" value={portalMetrics.total_portal_visits} raw />
+            <MetricCard label="Resolved" value={portalMetrics.total_resolved} raw />
+            <MetricCard label="Deflection" value={portalMetrics.deflection_rate} />
+            <MetricCard
+              label="Auto-refunds ₹"
+              value={portalMetrics.total_refunds_issued_rupees}
+              money
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="elevated-card px-4 py-3 text-[13px]">
+              Disputes after portal:{' '}
+              <span className="font-mono text-ink">{portalMetrics.disputes_after_portal}</span>
+            </div>
+            <div className="elevated-card px-4 py-3 text-[13px]">
+              Disputes without portal:{' '}
+              <span className="font-mono text-ink">{portalMetrics.disputes_without_portal}</span>
+            </div>
+          </div>
+          <p className="text-[12px] text-muted">
+            Est. chargebacks prevented: {portalMetrics.estimated_chargebacks_prevented} · Savings{' '}
+            {formatRupees(portalMetrics.estimated_savings_rupees)}
+          </p>
+        </section>
+      ) : null}
+
       {rs ? (
         <section className="space-y-5">
           <div>
@@ -281,10 +350,20 @@ function Stat({ label, value }) {
   )
 }
 
-function MetricCard({ label, value }) {
+function MetricCard({ label, value, raw, money }) {
+  let display
+  let tone = 'text-ink'
+  if (money) {
+    display = formatRupees(Number(value) || 0)
+  } else if (raw) {
+    display = String(value ?? 0)
+  } else {
+    display = Number(value).toFixed(2)
+    tone = metricTone(value)
+  }
   return (
     <div className="elevated-card px-4 py-4 text-center">
-      <p className={`font-mono text-[28px] font-bold ${metricTone(value)}`}>{Number(value).toFixed(2)}</p>
+      <p className={`font-mono text-[28px] font-bold ${tone}`}>{display}</p>
       <p className="mt-1 text-[12px] text-muted">{label}</p>
     </div>
   )

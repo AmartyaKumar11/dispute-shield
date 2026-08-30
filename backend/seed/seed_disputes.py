@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
@@ -10,11 +11,12 @@ from sqlalchemy import select
 
 from backend.database import AsyncSessionLocal
 from backend.config import settings
-from backend.models import Dispute, TransactionRisk
+from backend.models import Dispute, PortalSession, TransactionRisk
 from backend.providers.shipping_provider import MockShippingProvider, get_shipping_info
 from backend.providers.shiprocket_provider import shiprocket
 from backend.services.dispute_service import process_dispute
 from backend.services.escalation_engine import create_seed_intervention
+from backend.services.portal_token import generate_token_for_session
 from backend.services.risk_scorer import score_transaction_risk
 from backend.utils.helpers import unix_to_naive
 
@@ -242,6 +244,165 @@ def _level(score: float) -> str:
     return "low"
 
 
+_CHAT_NOT_RECEIVED = [
+    {
+        "role": "customer",
+        "message": "I never received my order",
+        "timestamp": "2026-08-25T14:30:00Z",
+    },
+    {
+        "role": "agent",
+        "message": (
+            "I can see your order was delivered on Aug 24 via Delhivery and signed by Rahul M. "
+            "at your delivery address. Could you check with Rahul or at the specified location? "
+            "If you still can't locate it, I can process a refund for you right away."
+        ),
+        "timestamp": "2026-08-25T14:30:05Z",
+    },
+    {
+        "role": "customer",
+        "message": "Oh let me check with my neighbor",
+        "timestamp": "2026-08-25T14:31:00Z",
+    },
+    {
+        "role": "agent",
+        "message": (
+            "Of course! Take your time. If you find it, great — no further action needed. "
+            "If not, just come back and click 'Request refund' and we'll process it instantly."
+        ),
+        "timestamp": "2026-08-25T14:31:04Z",
+    },
+]
+
+_CHAT_WRONG_PRODUCT = [
+    {
+        "role": "customer",
+        "message": "Wrong product received",
+        "timestamp": "2026-08-26T10:00:00Z",
+    },
+    {
+        "role": "agent",
+        "message": (
+            "I'm sorry about that. Your order for Wireless Headphones (₹1,200) shows as delivered. "
+            "Since you received the wrong item, I'd recommend clicking 'Request refund' above — "
+            "your refund will be processed automatically within seconds since the order is under "
+            "our instant refund threshold."
+        ),
+        "timestamp": "2026-08-26T10:00:06Z",
+    },
+]
+
+
+async def _seed_portal_sessions() -> dict:
+    """Simulate portal visits for demo: resolved (no dispute) + visited-then-disputed."""
+    created = 0
+    links: list[str] = []
+    async with AsyncSessionLocal() as session:
+        risks = (
+            await session.execute(select(TransactionRisk).order_by(TransactionRisk.id.asc()))
+        ).scalars().all()
+        clean = [r for r in risks if r.alert_status != "dispute_filed"]
+        disputed = [r for r in risks if r.alert_status == "dispute_filed"]
+
+        # 4 resolved via portal (clean txs — chargebacks deflected)
+        resolve_specs = [
+            ("resolved_refund", "refund", _CHAT_WRONG_PRODUCT, True, 49900),
+            ("resolved_refund", "refund", _CHAT_WRONG_PRODUCT, True, 79900),
+            ("resolved_chat", "chat", _CHAT_NOT_RECEIVED, False, None),
+            ("resolved_replacement", "replacement", _CHAT_NOT_RECEIVED, False, None),
+        ]
+        for risk, (status, rtype, chat, is_refund, amt) in zip(clean[:4], resolve_specs):
+            if not risk.order_id:
+                continue
+            existing = (
+                await session.execute(
+                    select(PortalSession).where(PortalSession.order_id == risk.order_id)
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                continue
+            email = risk.customer_email
+            if not email and risk.payment_data_json:
+                try:
+                    email = json.loads(risk.payment_data_json).get("email")
+                except json.JSONDecodeError:
+                    email = None
+            token = await generate_token_for_session(session, risk.order_id, risk.payment_id, email)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            started = now - timedelta(hours=6)
+            session.add(
+                PortalSession(
+                    id=str(uuid.uuid4()),
+                    order_token=token,
+                    order_id=risk.order_id,
+                    payment_id=risk.payment_id,
+                    customer_email=email,
+                    status=status,
+                    viewed_order_status=True,
+                    requested_refund=is_refund,
+                    requested_replacement=rtype == "replacement",
+                    started_chat=True,
+                    resolution_type=rtype,
+                    resolution_detail=f"Seeded {rtype} resolution via portal",
+                    refund_amount_paise=amt if is_refund else None,
+                    refund_id=f"rfnd_sim_{risk.payment_id}" if is_refund else None,
+                    chat_history_json=json.dumps(chat),
+                    dispute_filed_after=False,
+                    started_at=started,
+                    resolved_at=now - timedelta(hours=5),
+                    last_activity_at=now - timedelta(hours=5),
+                )
+            )
+            links.append(f"{settings.frontend_url.rstrip('/')}/resolve/{token}")
+            created += 1
+
+        # 2 visited portal but abandoned → dispute filed later
+        for risk in disputed[:2]:
+            if not risk.order_id:
+                continue
+            existing = (
+                await session.execute(
+                    select(PortalSession).where(PortalSession.order_id == risk.order_id)
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                continue
+            email = risk.customer_email
+            if not email and risk.payment_data_json:
+                try:
+                    email = json.loads(risk.payment_data_json).get("email")
+                except json.JSONDecodeError:
+                    email = None
+            token = await generate_token_for_session(session, risk.order_id, risk.payment_id, email)
+            suffix = risk.payment_id.rsplit("_", 1)[-1]
+            dispute_id = f"disp_simulated_{suffix}" if suffix.isdigit() else None
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(
+                PortalSession(
+                    id=str(uuid.uuid4()),
+                    order_token=token,
+                    order_id=risk.order_id,
+                    payment_id=risk.payment_id,
+                    customer_email=email,
+                    status="abandoned",
+                    viewed_order_status=True,
+                    requested_refund=False,
+                    requested_replacement=False,
+                    started_chat=True,
+                    chat_history_json=json.dumps(_CHAT_NOT_RECEIVED[:2]),
+                    dispute_filed_after=True,
+                    linked_dispute_id=dispute_id,
+                    started_at=now - timedelta(days=1),
+                    last_activity_at=now - timedelta(hours=20),
+                )
+            )
+            links.append(f"{settings.frontend_url.rstrip('/')}/resolve/{token}")
+            created += 1
+
+        await session.commit()
+    return {"portal_sessions_created": created, "sample_portal_urls": links[:3]}
+
+
 async def _save_risk(
     payment: dict,
     shipping,
@@ -281,6 +442,7 @@ async def _save_risk(
                 vault_fields_json=json.dumps(fields),
                 vault_timeline_json=json.dumps(timeline),
                 payment_data_json=json.dumps(payment),
+                customer_email=payment.get("email"),
             )
         )
         await session.commit()
@@ -469,6 +631,13 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
                 errors.append(f"shiprocket_{i}: {exc}")
                 log.exception("seed.shiprocket_failed", index=i)
 
+    portal_info = {"portal_sessions_created": 0, "sample_portal_urls": []}
+    try:
+        portal_info = await _seed_portal_sessions()
+    except Exception as exc:
+        errors.append(f"portal_seed: {exc}")
+        log.exception("seed.portal_failed")
+
     for dispute_id in to_process:
         if background_tasks is not None:
             background_tasks.add_task(process_dispute, dispute_id)
@@ -484,6 +653,7 @@ async def seed_test_disputes(background_tasks: BackgroundTasks | None = None) ->
         "total_disputes": len(dispute_scenarios),
         "total_transactions": len(dispute_scenarios) + len(CLEAN_TXNS),
         "errors": errors,
+        **portal_info,
     }
 
 

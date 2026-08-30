@@ -167,6 +167,18 @@ async def execute_intervention(alert: EscalationAlert, db: AsyncSession) -> bool
                 risk_row.customer_email = to_email
         return False
 
+    portal_url = None
+    if alert.order_id:
+        try:
+            from backend.services.portal_token import generate_token_for_session
+
+            token = await generate_token_for_session(
+                db, alert.order_id, alert.payment_id, to_email
+            )
+            portal_url = f"{settings.frontend_url.rstrip('/')}/resolve/{token}"
+        except Exception:
+            log.exception("portal.link_for_email_failed")
+
     success = await email_provider.send_intervention_email(
         to_email=to_email,
         customer_name=(to_email.split("@")[0] if to_email else "Customer"),
@@ -174,6 +186,7 @@ async def execute_intervention(alert: EscalationAlert, db: AsyncSession) -> bool
         intervention_message=alert.intervention_message,
         product_name=alert.product_name or "Your order",
         amount=(alert.transaction_amount or 0) / 100,
+        portal_url=portal_url,
     )
 
     risk_row = None

@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Check, Loader2, Mail, Minus, RefreshCw } from 'lucide-react'
-import { getDispute, retryDispute, forceSubmitDispute, acceptDispute, sendResolutionOffer } from '../lib/api'
+import {
+  getDispute,
+  retryDispute,
+  forceSubmitDispute,
+  acceptDispute,
+  sendResolutionOffer,
+  getPortalSessionsForOrder,
+} from '../lib/api'
 import { evidenceChecklist, formatDate, formatRupees, TERMINAL } from '../lib/format'
 import EvidenceTimeline from './EvidenceTimeline'
 import AIReasoning from './AIReasoning'
@@ -16,6 +23,7 @@ export default function DisputeDetail({ disputeId, onRetried }) {
   const [error, setError] = useState(null)
   const [retrying, setRetrying] = useState(false)
   const [acting, setActing] = useState(false)
+  const [portalSessions, setPortalSessions] = useState([])
 
   useEffect(() => {
     if (!disputeId) {
@@ -32,6 +40,14 @@ export default function DisputeDetail({ disputeId, onRetried }) {
         if (!alive) return
         setDispute(data)
         setError(null)
+        if (data.order_id) {
+          try {
+            const portal = await getPortalSessionsForOrder(data.order_id)
+            if (alive) setPortalSessions(portal.sessions || [])
+          } catch {
+            if (alive) setPortalSessions([])
+          }
+        }
         if (TERMINAL.has(data.status) && timer) {
           clearInterval(timer)
           timer = null
@@ -257,6 +273,34 @@ export default function DisputeDetail({ disputeId, onRetried }) {
       </section>
 
       <AIReasoning dispute={dispute} />
+
+      {portalSessions.length ? (
+        <section className="space-y-3">
+          <p className="eyebrow">Portal activity</p>
+          <div className="elevated-card space-y-3 px-4 py-4">
+            <p className="text-[13px] text-[#FBBF24]">
+              Customer used portal before filing dispute
+            </p>
+            {portalSessions.map((s) => (
+              <div key={s.id} className="border-t border-white/[0.06] pt-3 text-[13px]">
+                <p className="text-muted">
+                  Status {s.status} · viewed={String(s.viewed_order_status)} · refund=
+                  {String(s.requested_refund)} · chat={String(s.started_chat)}
+                </p>
+                {(s.chat_history || []).length ? (
+                  <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-[12px] text-ink">
+                    {s.chat_history.map((m, i) => (
+                      <li key={i}>
+                        <span className="text-label">{m.role}:</span> {m.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section>
         <p className="eyebrow mb-3">Evidence collected</p>

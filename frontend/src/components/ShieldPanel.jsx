@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Mail } from 'lucide-react'
-import { getRiskSummary, getRisks } from '../lib/api'
+import { generatePortalLink, getRiskSummary, getRisks } from '../lib/api'
 import { formatDate, formatRupees, truncateId } from '../lib/format'
 
 function scoreColor(score) {
@@ -119,6 +119,15 @@ export default function ShieldPanel({ refreshKey, onOpenDispute }) {
                             Email dry-run
                           </span>
                         ) : null}
+                        {r.portal_badge === 'resolved' ? (
+                          <span className="rounded-pill border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent">
+                            Resolved via portal ✓
+                          </span>
+                        ) : r.portal_badge === 'visited' ? (
+                          <span className="rounded-pill border border-info/30 bg-info/10 px-2 py-0.5 text-[11px] text-[#60A5FA]">
+                            Portal visited
+                          </span>
+                        ) : null}
                       </div>
                       <div className="mt-2 flex items-center gap-3">
                         <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/[0.08]">
@@ -188,6 +197,24 @@ export default function ShieldPanel({ refreshKey, onOpenDispute }) {
                           Open linked dispute {truncateId(r.dispute_id)}
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const link = await generatePortalLink({
+                              order_id: r.order_id,
+                              payment_id: r.payment_id,
+                              customer_email: r.customer_email,
+                            })
+                            await navigator.clipboard.writeText(link.portal_url)
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className="text-[12px] text-muted underline-offset-2 hover:text-accent hover:underline"
+                      >
+                        Copy portal link
+                      </button>
                     </div>
                   ) : null}
                 </div>

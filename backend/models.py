@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.database import Base
@@ -127,7 +127,11 @@ class TransactionRisk(Base):
     intervention_email_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
-    def to_response(self, dispute_id: str | None = None) -> RiskResponse:
+    def to_response(
+        self,
+        dispute_id: str | None = None,
+        portal_badge: str | None = None,
+    ) -> RiskResponse:
         factors = []
         actions = []
         vault_fields: list = []
@@ -170,6 +174,7 @@ class TransactionRisk(Base):
             intervention_message=self.intervention_message,
             intervention_sent_at=self.intervention_sent_at,
             intervention_email_status=self.intervention_email_status,
+            portal_badge=portal_badge,
         )
 
 
@@ -226,6 +231,7 @@ class RiskResponse(BaseModel):
     intervention_message: str | None = None
     intervention_sent_at: datetime | None = None
     intervention_email_status: str | None = None
+    portal_badge: str | None = None
 
 
 class EscalationEvent(Base):
@@ -297,3 +303,106 @@ class WebhookPayload(BaseModel):
     contains: list[str] = Field(default_factory=list)
     payload: dict
     created_at: int
+
+
+class PortalSession(Base):
+    __tablename__ = "portal_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    order_token: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    order_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    payment_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    customer_email: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    status: Mapped[str] = mapped_column(String, default="active")
+    viewed_order_status: Mapped[bool] = mapped_column(Boolean, default=False)
+    requested_refund: Mapped[bool] = mapped_column(Boolean, default=False)
+    requested_replacement: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_chat: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    resolution_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolution_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refund_amount_paise: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refund_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    chat_history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    dispute_filed_after: Mapped[bool] = mapped_column(Boolean, default=False)
+    linked_dispute_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class PortalConfig(Base):
+    __tablename__ = "portal_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    auto_refund_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_refund_max_amount_paise: Mapped[int] = mapped_column(Integer, default=200000)
+    merchant_name: Mapped[str] = mapped_column(String, default="Merchant")
+    support_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    token_secret: Mapped[str] = mapped_column(String, default="disputeshield-portal-secret")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class GenerateLinkRequest(BaseModel):
+    order_id: str
+    payment_id: str | None = None
+    customer_email: str | None = None
+
+
+class GenerateLinkResponse(BaseModel):
+    portal_url: str
+    token: str
+
+
+class RefundRequest(BaseModel):
+    reason: str
+    detail: str | None = None
+
+
+class RefundResponse(BaseModel):
+    success: bool
+    refund_type: str
+    refund_id: str | None = None
+    refund_amount_rupees: float | None = None
+    estimated_days: str | None = None
+    message: str
+
+
+class ReplacementRequest(BaseModel):
+    reason: str
+    detail: str
+
+
+class ReplacementResponse(BaseModel):
+    success: bool
+    message: str
+    ticket_id: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    suggested_actions: list[str] = Field(default_factory=list)
+    session_id: str
+    resolution_detected: bool = False
+    resolution_type: str | None = None
+
+
+class PortalMetricsResponse(BaseModel):
+    total_portal_visits: int
+    total_resolved: int
+    resolution_breakdown: dict[str, int]
+    deflection_rate: float
+    disputes_after_portal: int
+    disputes_without_portal: int
+    avg_resolution_time_seconds: float
+    total_refunds_issued_rupees: float
+    estimated_chargebacks_prevented: int
+    estimated_savings_rupees: float

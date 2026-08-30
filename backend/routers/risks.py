@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_session
 from backend.models import (
     Dispute,
+    PortalSession,
     RiskListResponse,
     RiskResponse,
     RiskSummary,
@@ -66,8 +67,21 @@ async def list_risks(session: AsyncSession = Depends(get_session)) -> RiskListRe
     ).scalars().all()
     disputes = (await session.execute(select(Dispute))).scalars().all()
     by_pay = {d.payment_id: d.id for d in disputes}
+    portal_rows = (await session.execute(select(PortalSession))).scalars().all()
+    badge_by_order: dict[str, str] = {}
+    for ps in portal_rows:
+        badge = "resolved" if (ps.status or "").startswith("resolved") or ps.resolution_type else "visited"
+        prev = badge_by_order.get(ps.order_id)
+        if prev != "resolved":
+            badge_by_order[ps.order_id] = badge
     return RiskListResponse(
-        risks=[r.to_response(dispute_id=by_pay.get(r.payment_id)) for r in rows],
+        risks=[
+            r.to_response(
+                dispute_id=by_pay.get(r.payment_id),
+                portal_badge=badge_by_order.get(r.order_id or ""),
+            )
+            for r in rows
+        ],
         total=len(rows),
     )
 
@@ -85,4 +99,17 @@ async def get_risk(
     dispute = (
         await session.execute(select(Dispute).where(Dispute.payment_id == payment_id))
     ).scalar_one_or_none()
-    return row.to_response(dispute_id=dispute.id if dispute else None)
+    portal_badge = None
+    if row.order_id:
+        sessions = (
+            await session.execute(select(PortalSession).where(PortalSession.order_id == row.order_id))
+        ).scalars().all()
+        for ps in sessions:
+            if (ps.status or "").startswith("resolved") or ps.resolution_type:
+                portal_badge = "resolved"
+                break
+            portal_badge = "visited"
+    return row.to_response(
+        dispute_id=dispute.id if dispute else None,
+        portal_badge=portal_badge,
+    )

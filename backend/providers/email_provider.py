@@ -58,9 +58,28 @@ class EmailProvider:
         intervention_message: str,
         product_name: str,
         amount: float,
+        portal_url: str | None = None,
     ) -> bool:
         subject = f"Update on your order {order_id} — DisputeShield"
         safe_msg = intervention_message.replace("\n", "<br/>")
+        portal_block = ""
+        if portal_url:
+            portal_block = f"""
+            <div style="margin-top: 20px; padding: 15px; background: #EFF6FF;
+                        border-radius: 8px; text-align: center;">
+                <p style="margin: 0 0 10px; color: #1E40AF; font-weight: 500;">
+                    Need help with your order?
+                </p>
+                <a href="{portal_url}" style="display: inline-block; padding: 10px 24px;
+                   background: #2563EB; color: white; text-decoration: none;
+                   border-radius: 8px; font-weight: 500;">
+                    Resolve your issue instantly
+                </a>
+                <p style="margin: 10px 0 0; color: #6B7280; font-size: 12px;">
+                    Get a refund, replacement, or chat with support — no waiting
+                </p>
+            </div>
+            """
         body_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
@@ -70,6 +89,7 @@ class EmailProvider:
                 </p>
             </div>
             <div style="padding: 0 10px; line-height: 1.6; color: #333;">{safe_msg}</div>
+            {portal_block}
             <div style="margin-top: 30px; padding: 15px; background: #e8f5e9; border-radius: 8px; text-align: center;">
                 <p style="margin: 0; color: #2e7d32; font-size: 14px;">
                     Simply reply to this email and we'll respond within 24 hours.
@@ -85,6 +105,8 @@ class EmailProvider:
 Hi {customer_name},
 
 {intervention_message}
+
+{f'Resolve instantly: {portal_url}' if portal_url else ''}
 
 Reply to this email and we'll respond within 24 hours.
 

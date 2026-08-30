@@ -12,9 +12,11 @@ from backend.routers import (
     disputes,
     evaluation,
     events,
+    health,
     intelligence,
     metrics,
     models,
+    portal,
     risks,
     test_integrations,
     webhooks,
@@ -48,10 +50,12 @@ app.include_router(intelligence.router)
 app.include_router(evaluation.router)
 app.include_router(models.router)
 app.include_router(test_integrations.router)
+app.include_router(portal.router)
+app.include_router(health.router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+async def health_check() -> dict[str, str]:
     return {"status": "OK"}
 
 

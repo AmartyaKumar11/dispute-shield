@@ -184,6 +184,39 @@ async def _run(dispute_id: str) -> None:
 
             await _mark_risk_dispute_filed(session, dispute.payment_id)
 
+            # Portal evidence for explanation letter
+            portal_note = ""
+            if dispute.order_id:
+                from backend.services.portal_service import sessions_for_order
+
+                portal_sessions = await sessions_for_order(session, dispute.order_id)
+                if portal_sessions:
+                    for ps in portal_sessions:
+                        ps.dispute_filed_after = True
+                        ps.linked_dispute_id = dispute.id
+                    latest = portal_sessions[0]
+                    portal_note = (
+                        f" Customer accessed resolution portal on {latest.started_at}. "
+                        f"Viewed status={latest.viewed_order_status}, "
+                        f"refund={latest.requested_refund}, chat={latest.started_chat}, "
+                        f"resolution={latest.resolution_type or 'none'}."
+                    )
+                    if latest.status.startswith("resolved"):
+                        dispute.status = "accepted"
+                        dispute.triage_action = "accept"
+                        dispute.review_reason = (
+                            f"Already resolved via portal ({latest.resolution_type})."
+                        )
+                        dispute.summary_text = (
+                            f"Portal already resolved this order ({latest.resolution_type})."
+                        )[:1000]
+                        dispute.processing_completed_at = datetime.now(timezone.utc).replace(
+                            tzinfo=None
+                        )
+                        await session.commit()
+                        log.info("pipeline.portal_already_resolved", dispute_id=dispute_id)
+                        return
+
             if triage.action == "accept":
                 dispute.status = "accepted"
                 dispute.summary_text = (
@@ -224,6 +257,8 @@ async def _run(dispute_id: str) -> None:
             letter_focus = strategy.letter_focus
             if "shipping_proof" in gaps:
                 letter_focus = f"{letter_focus} {_GAP_FOCUS}"
+            if portal_note:
+                letter_focus = f"{letter_focus}{portal_note}"
             letter, used_fallback = await _llm.generate_explanation_letter(
                 dispute.reason_code,
                 letter_focus,

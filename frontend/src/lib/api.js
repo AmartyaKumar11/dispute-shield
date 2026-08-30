@@ -78,6 +78,51 @@ export async function getModelsInfo() {
   return data
 }
 
+export async function getPortalStatus(token) {
+  const { data } = await api.get(`/api/portal/${encodeURIComponent(token)}/status`)
+  return data
+}
+
+export async function portalRefund(token, body) {
+  const { data } = await api.post(`/api/portal/${encodeURIComponent(token)}/refund`, body)
+  return data
+}
+
+export async function portalReplacement(token, body) {
+  const { data } = await api.post(`/api/portal/${encodeURIComponent(token)}/replacement`, body)
+  return data
+}
+
+export async function portalChat(token, message) {
+  const { data } = await api.post(`/api/portal/${encodeURIComponent(token)}/chat`, { message })
+  return data
+}
+
+export async function getPortalMetrics() {
+  const { data } = await api.get('/api/portal/metrics')
+  return data
+}
+
+export async function generatePortalLink(payload) {
+  const { data } = await api.post('/api/portal/generate-link', payload)
+  return data
+}
+
+export async function generatePortalLinksBatch() {
+  const { data } = await api.post('/api/portal/generate-links-batch')
+  return data
+}
+
+export async function getPortalSessionsForOrder(orderId) {
+  const { data } = await api.get(`/api/portal/order/${encodeURIComponent(orderId)}/sessions`)
+  return data
+}
+
+export async function getHealthScore() {
+  const { data } = await api.get('/api/health/score')
+  return data
+}
+
 export async function sendTestEmail(payload) {
   const { data } = await api.post('/api/test/send-email', payload)
   return data
